@@ -20,7 +20,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "crs:test-push": "tsx src/scripts/crs-test-push.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.687.0",

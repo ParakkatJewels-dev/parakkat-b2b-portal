@@ -159,6 +159,13 @@ bookingRouter.post(
 
 /**
  * @openapi
+ * /bookings/admin/holds/sweep:
+ *   post: { summary: Expire lapsed pay-first holds now (ADMIN), tags: [Bookings], security: [{ bearerAuth: [] }] }
+ */
+bookingRouter.post('/admin/holds/sweep', authenticate, requireRole('ADMIN'), asyncHandler(bookingController.runHoldSweep));
+
+/**
+ * @openapi
  * /bookings/{id}:
  *   get:
  *     summary: Get a booking (AGENT/AGENCY, own agency only)

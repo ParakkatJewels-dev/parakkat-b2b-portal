@@ -137,6 +137,13 @@ const baseSchema = z.object({
   CRS_PROVIDER: z.enum(['mock', 'live']).default('mock'),
   CRS_BASE_URL: z.string().optional(),
   CRS_API_KEY: z.string().optional(),
+  // Live HotSoft ingest endpoint on the company CRS (chief.parakkatjewels.in).
+  // Accepts JSON, max 2MB/request; authenticated with a Bearer token.
+  CRS_INGEST_URL: z.string().optional(),
+  CRS_TOKEN: z.string().optional(),
+  // Request timeout (ms) for a CRS ingest POST before it's treated as failed
+  // (outbox then retries). Kept short so a hung CRS doesn't stall the worker.
+  CRS_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
   // Payment gateway (Decision D2-a: portal collects, posts to CRS).
   PAYMENT_PROVIDER: z.enum(['mock', 'airpay']).default('mock'),
   AIRPAY_MERCHANT_ID: z.string().optional(),
@@ -178,6 +185,22 @@ const baseSchema = z.object({
   // window raises an audited alert (the hard block is the rate limiter).
   ONBOARDING_ANOMALY_THRESHOLD: z.coerce.number().int().positive().default(5),
   ONBOARDING_ANOMALY_WINDOW_MINUTES: z.coerce.number().int().positive().default(10),
+
+  // --- Background scheduler ---
+  // In-process scheduler that drives the periodic jobs (stale-hold expiry, CRS
+  // outbox retry, rebook queue, dunning). Set false to disable and rely solely
+  // on the manual admin endpoints / an external cron. Always off under test.
+  SCHEDULER_ENABLED: boolEnv(true),
+  // Release lapsed pay-first holds (AWAITING_PAYMENT past holdExpiresAt).
+  HOLD_SWEEP_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+  // Retry PENDING CRS outbox events that failed inline delivery.
+  CRS_FLUSH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+  // Retry COMMIT_FAILED bookings queued for AxisRooms rebook.
+  REBOOK_QUEUE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(120),
+  // Dunning (overdue reminders / auto-suspend / credit alerts). Defaults to daily
+  // to avoid re-notifying overdue agencies too often; for a precise time-of-day
+  // run, disable this and hit POST /finance/dunning/run from an external cron.
+  DUNNING_INTERVAL_SECONDS: z.coerce.number().int().positive().default(86400),
 });
 
 const parsed = baseSchema.safeParse(process.env);
@@ -225,6 +248,14 @@ if (data.NODE_ENV === 'production') {
   }
   if (data.PAYMENT_WEBHOOK_SECRET === 'dev-payment-webhook-secret') {
     productionErrors.push('PAYMENT_WEBHOOK_SECRET must be set to a real secret in production');
+  }
+  if (data.AXISROOMS_PROVIDER === 'live') {
+    if (!data.AXISROOMS_BASE_URL) productionErrors.push('AXISROOMS_BASE_URL is required when AXISROOMS_PROVIDER=live');
+    if (!data.AXISROOMS_API_KEY) productionErrors.push('AXISROOMS_API_KEY is required when AXISROOMS_PROVIDER=live');
+  }
+  if (data.CRS_PROVIDER === 'live') {
+    if (!data.CRS_INGEST_URL) productionErrors.push('CRS_INGEST_URL is required when CRS_PROVIDER=live');
+    if (!data.CRS_TOKEN) productionErrors.push('CRS_TOKEN is required when CRS_PROVIDER=live');
   }
   if (data.PAYMENT_PROVIDER === 'airpay') {
     if (!data.AIRPAY_MERCHANT_ID) productionErrors.push('AIRPAY_MERCHANT_ID is required when PAYMENT_PROVIDER=airpay');

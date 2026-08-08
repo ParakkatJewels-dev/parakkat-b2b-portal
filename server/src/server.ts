@@ -4,6 +4,7 @@ import { createApp } from './app';
 import { logger } from './lib/logger';
 import { prisma } from './lib/prisma';
 import { initRealtime } from './lib/realtime';
+import { startScheduler, stopScheduler } from './lib/scheduler';
 import { loadSettings } from './modules/settings/settings.service';
 
 const app = createApp();
@@ -15,10 +16,13 @@ server.listen(env.PORT, () => {
   // Prime the settings cache (company profile, maintenance flag, booking window)
   // so hot paths read persisted values without a per-request DB hit.
   void loadSettings();
+  // Start the periodic maintenance jobs (hold expiry, CRS retry, rebook, dunning).
+  startScheduler();
 });
 
 async function shutdown(signal: string): Promise<void> {
   logger.info(`Received ${signal}, shutting down gracefully...`);
+  stopScheduler();
   server.close(async () => {
     await prisma.$disconnect();
     logger.info('Shutdown complete');

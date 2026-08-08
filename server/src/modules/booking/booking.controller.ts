@@ -113,3 +113,8 @@ export async function runRebookQueue(_req: Request, res: Response): Promise<void
 export async function retryRebook(req: Request, res: Response): Promise<void> {
   res.status(200).json(await bookingService.retryRebook(req.params.id));
 }
+
+/** Admin: expire lapsed pay-first holds now (also run on a timer by the scheduler). */
+export async function runHoldSweep(_req: Request, res: Response): Promise<void> {
+  res.status(200).json({ expired: await bookingService.expireStaleHolds() });
+}
