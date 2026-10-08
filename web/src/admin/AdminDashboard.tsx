@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '../lib/router';
 import { AppShell } from '../components/layout/AppShell';
 import { inr } from '../components/dashboard/StatCard';
 import { Donut, TrendChart } from '../components/dashboard/charts';

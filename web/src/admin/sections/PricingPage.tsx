@@ -7,7 +7,7 @@ import * as pricingApi from '../../api/pricing.api';
 import type { AxisRatesRoom, RatePlan } from '../../api/pricing.api';
 import * as adminApi from '../../api/admin.api';
 import type { TierPreset } from '../../types/admin';
-import { Link } from 'react-router-dom';
+import { Link } from '../../lib/router';
 
 const PLANS: RatePlan[] = ['EP', 'CP', 'MAP', 'AP'];
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

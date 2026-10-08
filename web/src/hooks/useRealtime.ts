@@ -50,9 +50,8 @@ export function useRealtime() {
     const pollTimer = window.setInterval(refreshActiveData, 60_000);
 
     async function subscribe() {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey =
-        import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
       if (!supabaseUrl || !supabaseKey) return;
 
       try {

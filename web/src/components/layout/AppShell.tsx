@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from '../../lib/router';
 import { useQuery } from '@tanstack/react-query';
 import * as authApi from '../../api/auth.api';
 import * as dashboardApi from '../../api/dashboard.api';

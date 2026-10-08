@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams } from '../lib/router';
 import { AppShell } from '../components/layout/AppShell';
 import { Skeleton, SkeletonForm } from '../components/ui/Skeleton';
 import * as adminApi from '../api/admin.api';

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../lib/router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell } from '../components/layout/AppShell';
 import { Badge, Button, DataTable, Modal, PageHeader, SearchInput, Stat, Tabs, type Column } from '../components/ui/kit';

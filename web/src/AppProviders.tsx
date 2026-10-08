@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
-import { BrowserRouter } from 'react-router-dom';
+'use client';
+
+import { useEffect, useState, type ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './api/queryClient';
 import { httpClient } from './api/httpClient';
 import * as authApi from './api/auth.api';
 import { hasSessionHint, useAuthStore } from './store/authStore';
 import { useRealtime } from './hooks/useRealtime';
-import { AppRouter } from './routes/router';
+import { useThemeStore } from './store/themeStore';
 
 /**
  * On first load the access token only lives in memory, so a page refresh
@@ -42,16 +43,16 @@ function useSessionBootstrap() {
   return ready;
 }
 
-import { useThemeStore } from './store/themeStore';
-
-function AppContent() {
+function SessionGate({ children }: { children: ReactNode }) {
   const ready = useSessionBootstrap();
   useRealtime(); // live multi-user updates once authenticated
+  // Pages render only in the browser, after the session is known: they read browser storage and
+  // the signed-in user while rendering, exactly as they did as a single-page app.
   if (!ready) return null;
-  return <AppRouter />;
+  return <>{children}</>;
 }
 
-export function App() {
+export function AppProviders({ children }: { children: ReactNode }) {
   const theme = useThemeStore((s) => s.theme);
 
   useEffect(() => {
@@ -65,9 +66,7 @@ export function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AppContent />
-      </BrowserRouter>
+      <SessionGate>{children}</SessionGate>
     </QueryClientProvider>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from '../lib/router';
 import { AppShell } from '../components/layout/AppShell';
 import { useAuth } from '../hooks/useAuth';
 import { Badge, Button, Field, Input, PageHeader, Select, inr } from '../components/ui/kit';

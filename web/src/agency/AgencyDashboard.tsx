@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link } from '../lib/router';
 import { AppShell } from '../components/layout/AppShell';
 import { StatCard, inr } from '../components/dashboard/StatCard';
 import { StatusDonut, TrendChart } from '../components/dashboard/charts';

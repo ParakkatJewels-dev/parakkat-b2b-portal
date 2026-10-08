@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link } from '../lib/router';
 import { AppShell } from '../components/layout/AppShell';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { Badge, inr, type Tone } from '../components/ui/kit';

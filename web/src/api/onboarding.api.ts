@@ -9,10 +9,7 @@ import type {
 // Public onboarding uses its own axios instance — no bearer token and no
 // 401-refresh interceptor (a bad resume token is a real 401, not an expired
 // session to refresh).
-const rawBaseURL = import.meta.env.VITE_API_BASE_URL || '/api';
-const baseURL = rawBaseURL.startsWith('http') && !rawBaseURL.endsWith('/api')
-  ? `${rawBaseURL.replace(/\/$/, '')}/api`
-  : rawBaseURL;
+const baseURL = '/api'; // same-origin: the API is part of this Next.js app
 
 const publicClient = axios.create({
   baseURL,

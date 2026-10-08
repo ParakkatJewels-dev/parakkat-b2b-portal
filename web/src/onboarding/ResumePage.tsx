@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '../lib/router';
 import * as onboardingApi from '../api/onboarding.api';
 import { saveResumeSession } from '../store/onboardingSession';
 import { ThemeToggle } from '../components/ThemeToggle';

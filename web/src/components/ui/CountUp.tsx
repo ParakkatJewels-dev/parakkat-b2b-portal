@@ -15,7 +15,7 @@ export function CountUp({
   format?: (n: number) => string;
 }) {
   const [val, setVal] = useState(0);
-  const raf = useRef<number>();
+  const raf = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;

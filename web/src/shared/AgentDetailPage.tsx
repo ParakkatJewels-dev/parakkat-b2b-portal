@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from '../lib/router';
 import { AppShell } from '../components/layout/AppShell';
 import { Skeleton, SkeletonForm, SkeletonStats } from '../components/ui/Skeleton';
 import { Badge, Button, Card, Modal, PageHeader, Stat, Toggle, inr } from '../components/ui/kit';

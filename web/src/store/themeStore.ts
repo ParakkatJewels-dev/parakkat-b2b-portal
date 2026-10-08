@@ -9,6 +9,8 @@ interface ThemeState {
 }
 
 const getInitialTheme = (): Theme => {
+  // Evaluated when the module loads, which also happens while Next.js prerenders pages.
+  if (typeof window === 'undefined') return 'light';
   const saved = localStorage.getItem('theme');
   if (saved === 'light' || saved === 'dark') return saved;
   // Default to light mode (white and blue theme)

@@ -24,6 +24,8 @@
     "db:seed": "npm run db:seed --workspace @b2b-portal/server"
   },
   "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@typescript-eslint/eslint-plugin": "^8.15.0",
     "@typescript-eslint/parser": "^8.15.0",
     "eslint": "^8.57.0",

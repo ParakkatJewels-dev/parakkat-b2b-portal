@@ -1,5 +1,7 @@
+'use client';
+
 import type { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate } from '../lib/router';
 import { useAuth } from '../hooks/useAuth';
 import type { Role } from '../types/auth';
 

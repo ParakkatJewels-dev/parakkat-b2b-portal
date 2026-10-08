@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link } from '../../lib/router';
 import { AppShell } from '../../components/layout/AppShell';
 import { Badge, Button, DataTable, Modal, PageHeader, SearchInput, Stat, Tabs, Toolbar, inr, type Column } from '../../components/ui/kit';
 import { CountUp } from '../../components/ui/CountUp';

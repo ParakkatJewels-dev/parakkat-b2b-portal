@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from '../lib/router';
 import { AppShell } from '../components/layout/AppShell';
 import { Icons } from '../components/layout/icons';
 import { SkeletonRows } from '../components/ui/Skeleton';

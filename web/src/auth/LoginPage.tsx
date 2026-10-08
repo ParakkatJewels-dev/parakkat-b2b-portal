@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '../lib/router';
 import * as authApi from '../api/auth.api';
 import { useAuth } from '../hooks/useAuth';
 import { ThemeToggle } from '../components/ThemeToggle';

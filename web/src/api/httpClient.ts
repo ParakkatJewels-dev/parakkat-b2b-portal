@@ -1,10 +1,8 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/authStore';
 
-const rawBaseURL = import.meta.env.VITE_API_BASE_URL || '/api';
-const baseURL = rawBaseURL.startsWith('http') && !rawBaseURL.endsWith('/api')
-  ? `${rawBaseURL.replace(/\/$/, '')}/api`
-  : rawBaseURL;
+// The API is served by this same Next.js app (app/api/[...path]), so it is always same-origin.
+const baseURL = '/api';
 
 export const httpClient = axios.create({
   baseURL,
