@@ -129,9 +129,11 @@ npm start         # production build of the single app: screens + API in one Nex
   still read). The service-role key remains server-only.
 - Run `npm run db:migrate:deploy` against Supabase before the production deployment. Migrations are
   intentionally not run during Vercel builds because preview builds may run concurrently.
-- The five-minute maintenance schedule in `web/vercel.json` requires Vercel Pro; Hobby permits only
-  daily cron schedules. The repository is also GitHub-organization-owned, which requires a paid
-  Vercel team for Git integration. Dunning runs daily at 03:00 UTC.
+- Cron (`web/vercel.json`): maintenance (hold sweep, CRS outbox retry, rebook queue) runs daily at
+  02:00 UTC and dunning at 03:00 UTC, because the team is on Vercel Hobby, which allows only daily
+  schedules. On Pro, set maintenance back to `*/5 * * * *`. Expired holds are still refused at
+  booking/payment time and CRS events are still pushed inline; the schedule only affects cleanup
+  and retries.
 
 ### Moving to Supabase Auth (one-time)
 
