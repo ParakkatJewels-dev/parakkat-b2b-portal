@@ -161,6 +161,14 @@ routes to a TOTP enrollment QR — scan it with any authenticator app, confirm t
 in. The demo AGENCY/AGENT users skip MFA for quick testing. (The demo users are dev-only: skipped
 when `NODE_ENV=production` or `SEED_DEMO=false`.)
 
+These passwords are public — never leave them on a deployment. To set a password from a terminal
+(a forgotten admin password, or replacing a default), run
+`npm run auth:set-password --workspace server -- <email>`: it asks for the new password at a hidden
+prompt, applies the portal's password rules, and signs that user out everywhere.
+
+Stay dates are calendar days stored as UTC midnight, and "today" is India's date
+(`server/src/utils/businessDate.ts`), so behaviour does not depend on the server's timezone.
+
 ## Testing
 
 ```bash
@@ -251,8 +259,9 @@ Once an application reaches `REVIEW`, an ADMIN/VERIFIER works it from the dashbo
    it back to `VERIFICATION` and re-runs the named checks.
 2. **Commercial config** (`POST /applications/:id/commercial-config` with `{ tier, overrides }`) —
    resolves the four terms from a tier preset (prepay ⇒ credit limit ₹0), versions the
-   configuration, creates the `Agency`, and moves to `COMMERCIAL_CONFIGURATION`. Presets are
-   configurable via `TIERS_CONFIG_JSON`.
+   configuration, creates the `Agency`, and moves to `COMMERCIAL_CONFIGURATION`. Presets default
+   from `TIERS_CONFIG_JSON` (or the built-in A/B/C); edits made in the admin Pricing screen are
+   stored in the database (`SystemSetting` key `tierPresets`) and replace the defaults.
 3. **Agreement + eSign** (`POST /applications/:id/agreement/send`) — generates the agreement,
    stores it, and initiates Digio Aadhaar eSign (mock returns a signing URL). Completion arrives as
    a signed webhook to `/api/webhooks/digio` for the ESIGN `providerRef`.

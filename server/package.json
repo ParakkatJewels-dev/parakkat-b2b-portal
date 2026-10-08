@@ -22,7 +22,8 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "crs:test-push": "tsx src/scripts/crs-test-push.ts",
-    "auth:migrate-users": "tsx scripts/migrate-users-to-supabase-auth.ts"
+    "auth:migrate-users": "tsx scripts/migrate-users-to-supabase-auth.ts",
+    "auth:set-password": "tsx scripts/set-password.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.687.0",
