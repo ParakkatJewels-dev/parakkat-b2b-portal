@@ -1,4 +1,3 @@
-import path from 'node:path';
 import express, { type Express } from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
@@ -37,7 +36,7 @@ import { cronRouter } from './modules/cron/cron.routes';
 import { realtimeRouter } from './modules/realtime/realtime.routes';
 
 export interface CreateAppOptions {
-  clientDistDir?: string;
+  /** Refresh the settings cache on demand (serverless: there is no startup hook to prime it). */
   loadSettingsOnRequest?: boolean;
 }
 
@@ -141,16 +140,8 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use('/api/reports', reportsRouter);
   app.use('/api/audit-logs', auditRouter);
 
-  if (options.clientDistDir) {
-    app.use(express.static(options.clientDistDir));
-    app.get('*', (req, res, next) => {
-      if (req.path === '/api' || req.path.startsWith('/api/') || !req.accepts('html')) {
-        next();
-        return;
-      }
-      res.sendFile(path.join(options.clientDistDir!, 'index.html'));
-    });
-  }
+  // The screens are served by the Next.js app in web/, which also hosts this API in-process
+  // (web/src/server/apiBridge.ts); this app only ever answers /api/*.
 
   app.use(notFound);
   app.use(errorHandler);

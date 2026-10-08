@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { env } from './config';
 import { createApp } from './app';
 import { logger } from './lib/logger';
@@ -6,9 +5,9 @@ import { prisma } from './lib/prisma';
 import { startScheduler, stopScheduler } from './lib/scheduler';
 import { loadSettings } from './modules/settings/settings.service';
 
-const clientDistDir =
-  env.NODE_ENV === 'production' ? path.resolve(__dirname, '../../public') : undefined;
-const app = createApp({ clientDistDir });
+// Standalone API process for local development (`npm run dev` proxies the Next.js app's /api to it).
+// Deployments serve the API from the Next.js app instead (web/app/api/[...path]).
+const app = createApp();
 
 const server = app.listen(env.PORT, () => {
   logger.info(`API listening on port ${env.PORT} (${env.NODE_ENV})`);

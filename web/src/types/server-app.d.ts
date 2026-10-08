@@ -3,5 +3,5 @@
 declare module '@b2b-portal/server/dist/app.js' {
   import type { RequestListener } from 'node:http';
 
-  export function createApp(options?: { clientDistDir?: string; loadSettingsOnRequest?: boolean }): RequestListener;
+  export function createApp(options?: { loadSettingsOnRequest?: boolean }): RequestListener;
 }

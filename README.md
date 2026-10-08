@@ -62,12 +62,20 @@ Every external integration (AxisRooms, Digio, CRS, Airpay) runs behind a swappab
 
 ## Stack
 
-- **API** (`server`): Node.js + Express + TypeScript, Prisma ORM over PostgreSQL, JWT auth with
-  RBAC + MFA (TOTP/email OTP), Winston/Morgan logging, Swagger docs, Vitest.
-- **Web** (`web`): React + TypeScript + Vite + Tailwind CSS, React Router, TanStack Query,
-  Zustand.
-- One deployable full-stack application: `server/` and `web/` remain internal workspaces for code
-  organization, while the root Express entry serves both under one Vercel domain.
+- **App** (`web`): one **Next.js 16** application (App Router, React 19, TypeScript, Tailwind CSS,
+  TanStack Query, Zustand). Every screen is its own route under `web/app/`, and the same app
+  serves the API: `web/app/api/[...path]` runs the Express API below in-process
+  (`web/src/server/apiBridge.ts`).
+- **API** (`server`): Node.js + Express + TypeScript, Prisma ORM over Supabase PostgreSQL, RBAC,
+  Winston/Morgan logging, Swagger docs, Vitest. Kept as a workspace so its routes, validation and
+  test suite are unchanged; `npm run dev` also runs it standalone for hot reload.
+- **Sign-in**: **Supabase Auth** owns users, passwords, sessions and authenticator-app (TOTP)
+  factors (`server/src/lib/identity`). The API performs every grant for the browser — the refresh
+  token stays in an httpOnly cookie, and login, MFA and password changes keep the portal's
+  suspension/maintenance gates and audit log. Email-code MFA remains the portal's own. Every
+  request re-checks the session, so revocations (logout, force-logout, suspension, password
+  reset) take effect immediately.
+- One deployment: a single Next.js project on Vercel, in the database's region.
 
 ## Prerequisites
 
@@ -83,38 +91,54 @@ npm install
 
 # Backend env:
 cp server/.env.example server/.env
-# Set DATABASE_URL to your managed Postgres, and fill the secrets:
-#   JWT_ACCESS_SECRET / JWT_REFRESH_SECRET / JWT_MFA_SECRET
-#     node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
-#   MFA_ENCRYPTION_KEY  (exactly 64 hex chars)
-#     node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# Set DATABASE_URL, and either:
+#   IDENTITY_PROVIDER=supabase  + SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (a dev Supabase project), or
+#   IDENTITY_PROVIDER=mock      — in-memory sign-in for offline development (the default outside
+#                                 production; sessions reset when the API restarts)
 
 npm run db:generate                      # generates Prisma Client
 npm run db:migrate                       # applies local development migrations
-npm run db:seed                          # creates admin + demo login users
+npm run db:seed                          # creates admin + demo login users (in the identity provider too)
 
-# Frontend env (defaults are fine for local dev — Vite proxies /api to :4000):
+# Public env for the browser (Realtime only):
 cp web/.env.example web/.env
 
-npm run dev       # web: http://localhost:5173, API/docs: http://localhost:4000/api/docs
+npm run dev       # app: http://localhost:3000 (proxies /api to the API on :4000, which hot-reloads)
+npm start         # production build of the single app: screens + API in one Next.js server
 ```
 
 ## Deployment
 
-- Import the **repository root** as one Vercel project. The root `index.ts` is the Express Function;
-  `npm run build` compiles the API and writes the React application to `public/` for Vercel's CDN.
-- Leave `VITE_API_BASE_URL` empty. Browser requests use same-origin `/api`, so preview and production
-  deployments work without a separately configured API host.
-- Add the values from `server/.env.example` to Vercel, including `DATABASE_URL`, JWT/MFA/webhook
+- One Vercel project with **Root Directory `web`** (framework: Next.js). `web/vercel.json` installs
+  and builds from the repository root (`npm ci`, `npm run build`: Prisma client → API → Next.js),
+  pins functions to **`sin1`** (Singapore — next to the Supabase database), and schedules the cron
+  jobs. Browser requests use same-origin `/api`; there is no API host to configure.
+- Add the values from `server/.env.example` to Vercel: `DATABASE_URL`, `IDENTITY_PROVIDER=supabase`,
+  `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (optionally `SUPABASE_PUBLISHABLE_KEY`), webhook
   secrets, `APP_BASE_URL`, `CRON_SECRET`, and the Supabase storage credentials. Use
-  `STORAGE_PROVIDER=supabase`; Vercel Functions do not provide persistent local file storage.
-- For live updates, set `REALTIME_ENABLED=true`, `REALTIME_CHANNEL_SECRET`, `VITE_SUPABASE_URL`, and
-  `VITE_SUPABASE_PUBLISHABLE_KEY`. The service-role key remains server-only.
+  `STORAGE_PROVIDER=supabase`; Vercel Functions do not provide persistent local file storage. The
+  old `JWT_*`, `ACCESS_TOKEN_TTL`, `MFA_PENDING_TOKEN_TTL` and `MFA_ENCRYPTION_KEY` are no longer read.
+- For live updates, set `REALTIME_ENABLED=true`, `REALTIME_CHANNEL_SECRET`,
+  `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (the old `VITE_*` names are
+  still read). The service-role key remains server-only.
 - Run `npm run db:migrate:deploy` against Supabase before the production deployment. Migrations are
   intentionally not run during Vercel builds because preview builds may run concurrently.
-- The five-minute maintenance schedule in `vercel.json` requires Vercel Pro; Hobby permits only
+- The five-minute maintenance schedule in `web/vercel.json` requires Vercel Pro; Hobby permits only
   daily cron schedules. The repository is also GitHub-organization-owned, which requires a paid
   Vercel team for Git integration. Dunning runs daily at 03:00 UTC.
+
+### Moving to Supabase Auth (one-time)
+
+1. In Supabase → Authentication → Sign In / Providers → Email, turn **off** "Allow new users to sign
+   up" (accounts are created only by the portal) and leave email confirmation as you prefer — the
+   portal creates its logins already confirmed. TOTP MFA is enabled on every project by default.
+2. `npm run db:migrate:deploy` (adds `MfaSession`, makes `User.passwordHash` optional).
+3. `npm run auth:migrate-users --workspace server` — a dry run listing what it would do; then the
+   same with `-- --apply`. Every user gets a Supabase Auth account with the **same id and the same
+   password** (bcrypt hashes are imported). Authenticator-app users enrol once more at their next
+   sign-in (secrets cannot be exported); email-code users are unaffected.
+4. Deploy with the variables above. Everyone signs in again once (old sessions are not carried
+   over).
 
 ### Logging in
 
@@ -134,7 +158,7 @@ when `NODE_ENV=production` or `SEED_DEMO=false`.)
 ## Testing
 
 ```bash
-npm run test:unit --workspace server       # 111 unit tests, no DB needed
+npm run test:unit --workspace server       # unit tests, no DB needed
 
 # Integration tests need a Postgres test database. Point .env.test's DATABASE_URL
 # at one (managed Postgres works), migrate it once, then run:
@@ -146,7 +170,8 @@ Test files run serially (they share one Postgres test database and truncate it b
 rate limiting is disabled under `NODE_ENV=test`.
 
 - **Unit tests** (`server/tests/unit`) have no external dependencies and run standalone —
-  password hashing, JWT issue/verify, TOTP crypto, RBAC middleware, local-disk storage, mailer.
+  password hashing, the Supabase Auth adapter contract, RBAC middleware, local-disk storage, mailer.
+  Integration tests sign in through the in-memory identity provider (`IDENTITY_PROVIDER=mock`).
 - **Integration tests** (`server/tests/integration`) run against a real database. Copy
   `server/.env.test.example` to `server/.env.test` and point `DATABASE_URL` at a disposable
   test database (integration tests truncate all tables between runs — never point this at

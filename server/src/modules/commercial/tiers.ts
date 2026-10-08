@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { env } from '../../config/env';
 import { logger } from '../../lib/logger';
+import { localDataDir } from '../../lib/localData';
 
 export interface TierPreset {
   paymentMode: PaymentMode;
@@ -23,7 +24,7 @@ const DEFAULT_TIERS: Record<string, TierPreset> = {
   C: { paymentMode: 'PREPAY', creditLimit: 0, paymentTerms: 'prepaid', markupPct: 15 },
 };
 
-const CONFIG_DIR = path.resolve(__dirname, '../../../.data');
+const CONFIG_DIR = localDataDir();
 const CONFIG_FILE = path.resolve(CONFIG_DIR, 'tiers.config.json');
 
 function ensureConfigDir() {

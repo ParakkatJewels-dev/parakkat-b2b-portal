@@ -1,14 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "express",
-  "installCommand": "npm install",
-  "buildCommand": "npm run build",
-  "functions": {
-    "index.ts": {
-      "includeFiles": "public/**",
-      "maxDuration": 300
-    }
-  },
+  "framework": "nextjs",
+  "regions": ["sin1"],
+  "installCommand": "cd .. && npm ci",
+  "buildCommand": "cd .. && npm run build",
+  "outputDirectory": ".next",
   "crons": [
     {
       "path": "/api/cron/maintenance",

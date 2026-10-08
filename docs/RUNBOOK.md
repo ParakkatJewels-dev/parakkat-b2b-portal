@@ -5,9 +5,11 @@ per-phase feature list are in the root `README.md`; external integrations are in
 `docs/API-CONTRACTS.md`.
 
 ## Services
-- **Portal** — one Vercel project and domain. The root `index.ts` exports Express as a Function and
-  Vercel's CDN serves the Vite build from `public/`.
-- **PostgreSQL + Storage + Realtime** — Supabase provides the persistent data services.
+- **Portal** — one Vercel project and domain: the Next.js app in `web/` (Root Directory `web`,
+  region `sin1`). Its pages are static on the CDN; `/api/*` is one Function that runs the Express
+  API in-process.
+- **PostgreSQL + Auth + Storage + Realtime** — Supabase provides the persistent data services and
+  sign-in (Supabase Auth: users, passwords, sessions, TOTP factors).
 
 Notifications are delivered synchronously; the CRS outbox is flushed inline after each financial
 change (no Redis/queue/worker). Async/queued delivery is a future enhancement.
@@ -24,20 +26,22 @@ npm install
 npm run db:generate
 npm run db:migrate                     # once
 npm run db:seed                        # admin + demo users (see README)
-npm run dev                            # web :5173 + API :4000
+npm run dev                            # app :3000 (proxies /api) + API :4000
 ```
 
 ## Deploy (one Vercel project)
-- Import the repository root and keep the framework/root settings from `vercel.json`.
-- Configure the server values from `server/.env.example` and public `VITE_*` values from
-  `web/.env.example`. Keep `VITE_API_BASE_URL` empty.
+- Root Directory `web`; `web/vercel.json` sets the framework, build, region and crons.
+- Configure the server values from `server/.env.example` (including `IDENTITY_PROVIDER=supabase`)
+  and the public `NEXT_PUBLIC_*` values from `web/.env.example`. First move to Supabase Auth: see
+  "Moving to Supabase Auth" in the README.
 - Set `STORAGE_PROVIDER=supabase`, `SCHEDULER_ENABLED=false`, a random `CRON_SECRET`, and
   `REALTIME_ENABLED=true` with a random `REALTIME_CHANNEL_SECRET`.
 - Apply migrations separately with `npm run db:migrate:deploy`, then deploy. Verify
-  `/api/health/live`, `/api/health/ready`, a login, an SPA deep link, and uploaded-file access.
-- `vercel.json` invokes maintenance every five minutes and dunning daily. The five-minute schedule
+  `/api/health/live`, `/api/health/ready`, a login, a deep link, and uploaded-file access.
+- `web/vercel.json` invokes maintenance every five minutes and dunning daily. The five-minute schedule
   requires Vercel Pro; use an external scheduler against the same protected routes otherwise.
-- Set `MFA_ENFORCED=true` and switch providers to `live`/`airpay` when their credentials/contracts
+- Turn on per-role MFA enforcement in System Settings → Security (the `MFA_ENFORCE*` env flags are
+  not read; only `MFA_DISABLED` is), and switch providers to `live`/`airpay` when their credentials/contracts
   are available (see `docs/API-CONTRACTS.md`).
 
 ## Health & monitoring

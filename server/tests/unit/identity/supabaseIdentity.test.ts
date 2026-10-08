@@ -1,11 +1,16 @@
 import { SignJWT } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SupabaseIdentity } from '../../../src/lib/identity/supabaseIdentity';
 
 // The adapter's contract with Supabase Auth (GoTrue): which endpoints it calls, with what, and
 // how answers map to portal outcomes. HTTP and the database are stubbed.
 
-const SUPABASE_URL = 'https://project.example.supabase.co';
-const JWT_SECRET = 'unit-test-legacy-jwt-secret-0123456789';
+const { SUPABASE_URL, JWT_SECRET, queryRaw, executeRaw } = vi.hoisted(() => ({
+  SUPABASE_URL: 'https://project.example.supabase.co',
+  JWT_SECRET: 'unit-test-legacy-jwt-secret-0123456789',
+  queryRaw: vi.fn(),
+  executeRaw: vi.fn(),
+}));
 const USER = '11111111-1111-4111-8111-111111111111';
 const FACTOR = '22222222-2222-4222-8222-222222222222';
 
@@ -20,16 +25,12 @@ vi.mock('../../../src/config/env', () => ({
   },
 }));
 
-const queryRaw = vi.fn();
-const executeRaw = vi.fn();
 vi.mock('../../../src/lib/prisma', () => ({
   prisma: {
     $queryRaw: (...args: unknown[]) => queryRaw(...args),
     $executeRaw: (...args: unknown[]) => executeRaw(...args),
   },
 }));
-
-const { SupabaseIdentity } = await import('../../../src/lib/identity/supabaseIdentity');
 
 const secret = new TextEncoder().encode(JWT_SECRET);
 async function accessToken(claims: Record<string, unknown> = {}, issuer = `${SUPABASE_URL}/auth/v1`) {

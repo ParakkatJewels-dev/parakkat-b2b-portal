@@ -2,8 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PutObjectResult, StorageProvider } from './storage.types';
+import { localDataDir } from '../localData';
 
-const UPLOAD_ROOT = path.resolve(__dirname, '../../../.data/uploads');
+const UPLOAD_ROOT = path.join(localDataDir(), 'uploads');
 
 function resolveSafePath(key: string): string {
   const resolved = path.resolve(UPLOAD_ROOT, key);

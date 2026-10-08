@@ -31,9 +31,11 @@ const nextConfig: NextConfig = {
   // The app imports the compiled API from the sibling workspace.
   outputFileTracingRoot: repoRoot,
   turbopack: { root: repoRoot },
-  // The API runs as plain Node, exactly as the standalone server does: not bundled, so its
-  // __dirname-relative files, pdfkit fonts, Prisma engine and Swagger assets resolve as usual.
-  serverExternalPackages: ['@b2b-portal/server', '@prisma/client', '.prisma/client'],
+  // The API's compiled code (a workspace, so not in node_modules) is bundled into the route, but
+  // libraries that read their own files at runtime must stay plain Node modules: pdfkit (and its
+  // fontkit/linebreak data) for every invoice and voucher PDF, Swagger UI for its assets, Prisma
+  // for its engine. Bundled, they look for those files under a path that does not exist.
+  serverExternalPackages: ['pdfkit', 'swagger-ui-express', 'swagger-jsdoc', '@prisma/client', '.prisma/client'],
   async rewrites() {
     if (!devApiOrigin) return [];
     return { beforeFiles: [{ source: '/api/:path*', destination: `${devApiOrigin}/api/:path*` }] };
