@@ -1,8 +1,7 @@
 import path from 'node:path';
 
 /**
- * Where the dev-only, file-backed features keep their data: local-disk uploads
- * (STORAGE_PROVIDER=local) and the admin-edited tier presets file.
+ * Where local-disk uploads (STORAGE_PROVIDER=local, development only) are kept.
  *
  * Defaults to server/.data next to this code. When the API runs bundled inside the Next.js app
  * (`next start`), module paths are rewritten and no longer point at the repository, so set

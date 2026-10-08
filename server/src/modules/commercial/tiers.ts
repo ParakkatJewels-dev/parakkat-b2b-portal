@@ -1,9 +1,8 @@
-import type { PaymentMode } from '@prisma/client';
-import fs from 'fs';
-import path from 'path';
+import type { ActorRole, PaymentMode, Prisma } from '@prisma/client';
 import { env } from '../../config/env';
 import { logger } from '../../lib/logger';
-import { localDataDir } from '../../lib/localData';
+import { prisma } from '../../lib/prisma';
+import { recordAuditLogSafe } from '../audit/audit.service';
 
 export interface TierPreset {
   paymentMode: PaymentMode;
@@ -24,47 +23,61 @@ const DEFAULT_TIERS: Record<string, TierPreset> = {
   C: { paymentMode: 'PREPAY', creditLimit: 0, paymentTerms: 'prepaid', markupPct: 15 },
 };
 
-const CONFIG_DIR = localDataDir();
-const CONFIG_FILE = path.resolve(CONFIG_DIR, 'tiers.config.json');
+/**
+ * The SystemSetting row holding the admin-edited presets — the whole map, replacing the defaults.
+ * Kept in the database rather than on disk: serverless instances have no durable, shared filesystem.
+ */
+export const TIER_PRESETS_SETTING = 'tierPresets';
 
-function ensureConfigDir() {
-  if (!fs.existsSync(CONFIG_DIR)) {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  }
-}
+let configured: Record<string, TierPreset> | undefined;
+let stored: Record<string, TierPreset> | undefined;
 
-let cached: Record<string, TierPreset> | undefined;
-
-export function getTiers(): Record<string, TierPreset> {
-  if (cached) return cached;
-
-  ensureConfigDir();
-  if (fs.existsSync(CONFIG_FILE)) {
-    try {
-      const content = fs.readFileSync(CONFIG_FILE, 'utf8');
-      cached = JSON.parse(content) as Record<string, TierPreset>;
-      return cached!;
-    } catch (err) {
-      logger.error('Failed to parse tiers.config.json; falling back to defaults', err);
-    }
-  }
-
-  cached = { ...DEFAULT_TIERS };
+function configuredDefaults(): Record<string, TierPreset> {
+  if (configured) return configured;
+  configured = { ...DEFAULT_TIERS };
   if (env.TIERS_CONFIG_JSON) {
     try {
-      const parsed = JSON.parse(env.TIERS_CONFIG_JSON) as Record<string, TierPreset>;
-      cached = { ...cached, ...parsed };
+      configured = { ...configured, ...(JSON.parse(env.TIERS_CONFIG_JSON) as Record<string, TierPreset>) };
     } catch {
       logger.error('TIERS_CONFIG_JSON is not valid JSON; using built-in tier presets');
     }
   }
-  return cached!;
+  return configured;
 }
 
-export function saveTiers(tiers: Record<string, TierPreset>): void {
-  ensureConfigDir();
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(tiers, null, 2), 'utf8');
-  cached = tiers;
+/** Called by the settings loader with the persisted presets (undefined when none are saved). */
+export function setStoredTiers(value: unknown): void {
+  stored =
+    value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0
+      ? (value as Record<string, TierPreset>)
+      : undefined;
+}
+
+export function getTiers(): Record<string, TierPreset> {
+  return stored ?? configuredDefaults();
+}
+
+export async function saveTiers(
+  tiers: Record<string, TierPreset>,
+  actor: { actorId: string; actorRole: ActorRole },
+): Promise<void> {
+  const before = getTiers();
+  const value = tiers as unknown as Prisma.InputJsonObject;
+  await prisma.systemSetting.upsert({
+    where: { key: TIER_PRESETS_SETTING },
+    create: { key: TIER_PRESETS_SETTING, value },
+    update: { value },
+  });
+  stored = tiers;
+  await recordAuditLogSafe({
+    entityType: 'SystemSetting',
+    entityId: TIER_PRESETS_SETTING,
+    event: 'SETTINGS_UPDATED',
+    actorId: actor.actorId,
+    actorRole: actor.actorRole,
+    before: before as unknown as Prisma.InputJsonObject,
+    after: value,
+  });
 }
 
 export function getTierPreset(tier: string): TierPreset | undefined {

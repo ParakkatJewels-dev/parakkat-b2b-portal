@@ -51,7 +51,7 @@ commercialRouter.post(
   requireRole('ADMIN'),
   validate({ body: updateTiersSchema }),
   asyncHandler(async (req, res) => {
-    saveTiers(req.body.tiers);
+    await saveTiers(req.body.tiers, { actorId: req.user!.id, actorRole: req.user!.role });
     res.status(200).json({ tiers: getTiers() });
   }),
 );

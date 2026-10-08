@@ -4,6 +4,7 @@ import { logger } from '../../lib/logger';
 import { env } from '../../config/env';
 import { setCompanyProfileOverride } from '../../config/company';
 import { recordAuditLogSafe } from '../audit/audit.service';
+import { setStoredTiers, TIER_PRESETS_SETTING } from '../commercial/tiers';
 
 /**
  * Admin-editable runtime settings. Persisted one row per group in SystemSetting,
@@ -118,6 +119,7 @@ export async function loadSettings(): Promise<void> {
   try {
     const rows = await prisma.systemSetting.findMany();
     const next = structuredClone(DEFAULTS);
+    setStoredTiers(rows.find((row) => row.key === TIER_PRESETS_SETTING)?.value);
     for (const row of rows) {
       const group = row.key as SettingsGroup;
       if (group in next) {
