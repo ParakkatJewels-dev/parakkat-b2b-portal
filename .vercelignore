@@ -1,0 +1,13 @@
+# What a CLI deploy (`vercel deploy`) may upload. Production deploys build from the Git repository,
+# where these are already ignored; this keeps a manual deploy from shipping local secrets or output.
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.test.example
+server/.data
+public
+**/node_modules
+**/.next
+**/dist

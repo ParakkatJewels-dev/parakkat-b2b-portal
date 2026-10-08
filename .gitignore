@@ -41,3 +41,6 @@ server/prisma/dev.db
 # Next.js
 .next/
 next-env.d.ts
+
+# Vercel CLI link (local)
+.vercel
