@@ -5,6 +5,10 @@ export interface AuthUser {
   role: Role;
   agencyId: string | null;
   mfaVerified: boolean;
+  /** Supabase Auth session id (lib/identity); absent only for hand-built test requests. */
+  sessionId?: string;
+  /** The verified bearer token, for provider calls made on the caller's behalf (TOTP). */
+  accessToken?: string;
 }
 
 declare global {

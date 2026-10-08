@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { hashPassword } from '../../src/modules/auth/password.service';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
+import { enforceStaffMfa, resetMfaPolicy } from '../setup/mfaPolicy';
 
 const app = createApp();
 
@@ -44,6 +45,7 @@ describe('audit trail', () => {
   });
 
   it('records MFA_ENABLED when TOTP setup is confirmed', async () => {
+    await enforceStaffMfa();
     const { user, password } = await createUser('ADMIN');
     const login1 = await request(app).post('/api/auth/login').send({ email: user.email, password });
     const pendingToken = login1.body.mfaPendingToken as string;
@@ -60,6 +62,7 @@ describe('audit trail', () => {
       .send({ code });
 
     expect(await eventsFor(user.id)).toContain('MFA_ENABLED');
+    await resetMfaPolicy();
   });
 
   it('records TOKEN_REUSE_DETECTED when a revoked refresh token is replayed', async () => {

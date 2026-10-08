@@ -8,7 +8,7 @@ export interface Session {
   ip: string | null;
   userAgent: string | null;
   createdAt: string;
-  expiresAt: string;
+  lastActiveAt: string;
 }
 
 export interface FailedLogin {
@@ -21,7 +21,7 @@ export interface FailedLogin {
 export interface SecurityPolicy {
   password: { minLength: number; requires: string[] };
   mfa: { enabled: boolean; enforcedAdmin: boolean; enforcedAgency: boolean; enforcedAgent: boolean };
-  session: { accessTokenTtl: string; refreshTokenTtlDays: number };
+  session: { provider: string; refreshTokenTtlDays: number };
 }
 
 export interface Integration {

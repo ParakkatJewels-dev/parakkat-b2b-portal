@@ -5,7 +5,7 @@ import { createApp } from '../../src/app';
 import { signDigioBody } from '../../src/lib/digio/signature';
 import { MANDATORY_CHECKS } from '../../src/lib/digio';
 import { hashPassword } from '../../src/modules/auth/password.service';
-import { issueAccessToken } from '../../src/modules/auth/token.service';
+import { tokenFor } from '../setup/identity';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
 
 const app = createApp();
@@ -39,7 +39,7 @@ async function adminToken(role: 'ADMIN' | 'VERIFIER' = 'ADMIN'): Promise<string>
       role,
     },
   });
-  return issueAccessToken({ id: user.id, role: user.role, agencyId: user.agencyId, mfaVerified: true });
+  return await tokenFor({ id: user.id, role: user.role, agencyId: user.agencyId, mfaVerified: true });
 }
 
 async function postWebhook(providerRef: string, status: 'passed' | 'failed') {

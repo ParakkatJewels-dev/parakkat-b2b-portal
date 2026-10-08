@@ -5,7 +5,7 @@ import { createApp } from '../../src/app';
 import { signDigioBody } from '../../src/lib/digio/signature';
 import { MANDATORY_CHECKS } from '../../src/lib/digio';
 import { hashPassword } from '../../src/modules/auth/password.service';
-import { issueAccessToken } from '../../src/modules/auth/token.service';
+import { tokenFor } from '../setup/identity';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
 
 const app = createApp();
@@ -87,7 +87,7 @@ describe('notifications are emitted and audit-logged', () => {
     const verifier = await testPrisma.user.create({
       data: { email: 'verifier-notif@example.com', passwordHash: await hashPassword('Pass!23456'), role: 'VERIFIER' },
     });
-    const token = issueAccessToken({ id: verifier.id, role: verifier.role, agencyId: null, mfaVerified: true });
+    const token = await tokenFor({ id: verifier.id, role: verifier.role, agencyId: null, mfaVerified: true });
 
     await request(app)
       .post(`/api/applications/${applicationId}/approve`)

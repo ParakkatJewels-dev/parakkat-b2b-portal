@@ -2,7 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { hashPassword } from '../../src/modules/auth/password.service';
-import { issueAccessToken } from '../../src/modules/auth/token.service';
+import { tokenFor } from '../setup/identity';
 import { __resetAnomalyState } from '../../src/modules/onboarding/anomaly';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
 
@@ -12,7 +12,7 @@ async function adminToken(): Promise<string> {
   const admin = await testPrisma.user.create({
     data: { email: `admin-${Date.now()}-${Math.random()}@example.com`, passwordHash: await hashPassword('Pass!23456'), role: 'ADMIN' },
   });
-  return issueAccessToken({ id: admin.id, role: 'ADMIN', agencyId: null, mfaVerified: true });
+  return await tokenFor({ id: admin.id, role: 'ADMIN', agencyId: null, mfaVerified: true });
 }
 
 const draft = {

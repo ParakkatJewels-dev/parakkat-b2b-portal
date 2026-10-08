@@ -109,9 +109,9 @@ export function MfaSetupPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await authApi.confirmTotp(state.mfaPendingToken, code);
-      const result = await authApi.verifyMfa(state.mfaPendingToken, code);
-      setSession(result.accessToken, result.user);
+      // Confirming the enrolment completes this login too: the session comes back upgraded.
+      const { accessToken } = await authApi.confirmTotp(state.mfaPendingToken, code);
+      setSession(accessToken, await authApi.getMeWithToken(accessToken));
       navigate('/');
     } catch {
       setError('Invalid code — check your authenticator app and try again');

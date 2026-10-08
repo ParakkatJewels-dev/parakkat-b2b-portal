@@ -164,7 +164,7 @@ describe('admin applications view', () => {
 
     // Mint an admin access token directly (MFA flow covered elsewhere).
     const { hashPassword } = await import('../../src/modules/auth/password.service');
-    const { issueAccessToken } = await import('../../src/modules/auth/token.service');
+    const { tokenFor } = await import('../setup/identity');
     const admin = await testPrisma.user.create({
       data: {
         email: 'admin-apps@example.com',
@@ -172,7 +172,7 @@ describe('admin applications view', () => {
         role: 'ADMIN',
       },
     });
-    const token = issueAccessToken({
+    const token = await tokenFor({
       id: admin.id,
       role: admin.role,
       agencyId: admin.agencyId,

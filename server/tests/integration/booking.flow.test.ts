@@ -4,7 +4,7 @@ import type { PaymentMode } from '@prisma/client';
 import { createApp } from '../../src/app';
 import { getInventoryClient } from '../../src/lib/inventory';
 import { hashPassword } from '../../src/modules/auth/password.service';
-import { issueAccessToken } from '../../src/modules/auth/token.service';
+import { tokenFor } from '../setup/identity';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
 
 const app = createApp();
@@ -43,7 +43,7 @@ async function setupAgency(opts: { paymentMode: PaymentMode; creditLimit: number
   const agent = await testPrisma.user.create({
     data: { email: `agent-${suffix}@example.com`, passwordHash: await hashPassword('Pass!23456'), role: 'AGENT', agencyId: agency.id },
   });
-  const token = issueAccessToken({ id: agent.id, role: 'AGENT', agencyId: agency.id, mfaVerified: true });
+  const token = await tokenFor({ id: agent.id, role: 'AGENT', agencyId: agency.id, mfaVerified: true });
   return { agency, agent, token };
 }
 

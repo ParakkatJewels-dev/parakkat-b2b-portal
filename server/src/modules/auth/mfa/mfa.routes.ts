@@ -12,7 +12,7 @@ export const mfaRouter = Router();
  * @openapi
  * /auth/mfa/setup/totp:
  *   post:
- *     summary: Begin TOTP MFA setup (returns QR code for an authenticator app)
+ *     summary: Begin TOTP MFA setup with Supabase Auth (returns the QR code for an authenticator app)
  *     tags: [MFA]
  *     security: [{ bearerAuth: [] }]
  *     responses:

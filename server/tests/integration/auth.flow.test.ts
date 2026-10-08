@@ -1,9 +1,10 @@
 import { authenticator } from 'otplib';
 import request from 'supertest';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { hashPassword } from '../../src/modules/auth/password.service';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
+import { enforceStaffMfa, resetMfaPolicy } from '../setup/mfaPolicy';
 
 const app = createApp();
 
@@ -58,6 +59,9 @@ describe('auth flow — role without mandatory MFA (AGENCY, MFA not enabled)', (
 });
 
 describe('auth flow — role with mandatory MFA (ADMIN), first login', () => {
+  beforeEach(enforceStaffMfa);
+  afterEach(resetMfaPolicy);
+
   it('returns mfaSetupRequired, completes TOTP setup, then logs in with MFA', async () => {
     const { user, password } = await createUser({ role: 'ADMIN' });
 
@@ -68,6 +72,9 @@ describe('auth flow — role with mandatory MFA (ADMIN), first login', () => {
     expect(firstLogin.body.mfaSetupRequired).toBe(true);
     const pendingToken = firstLogin.body.mfaPendingToken as string;
     expect(pendingToken).toBeTypeOf('string');
+    // A session that still owes its second factor reaches the MFA routes and nothing else.
+    const blocked = await request(app).get('/api/users/me').set('Authorization', `Bearer ${pendingToken}`);
+    expect(blocked.status).toBe(401);
 
     const setupRes = await request(app)
       .post('/api/auth/mfa/setup/totp')

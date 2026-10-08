@@ -2,7 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { hashPassword } from '../../src/modules/auth/password.service';
-import { issueAccessToken } from '../../src/modules/auth/token.service';
+import { tokenFor } from '../setup/identity';
 import { loadSettings } from '../../src/modules/settings/settings.service';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
 
@@ -49,9 +49,9 @@ async function setupAgencyWithBooking() {
   const agencyUser = await testPrisma.user.create({
     data: { email: `au-${suffix}@example.com`, passwordHash: await hashPassword('Pass!23456'), role: 'AGENCY', agencyId: agency.id },
   });
-  const agentToken = issueAccessToken({ id: agent.id, role: 'AGENT', agencyId: agency.id, mfaVerified: true });
-  const agencyToken = issueAccessToken({ id: agencyUser.id, role: 'AGENCY', agencyId: agency.id, mfaVerified: true });
-  const adminToken = issueAccessToken({ id: admin.id, role: 'ADMIN', agencyId: null, mfaVerified: true });
+  const agentToken = await tokenFor({ id: agent.id, role: 'AGENT', agencyId: agency.id, mfaVerified: true });
+  const agencyToken = await tokenFor({ id: agencyUser.id, role: 'AGENCY', agencyId: agency.id, mfaVerified: true });
+  const adminToken = await tokenFor({ id: admin.id, role: 'ADMIN', agencyId: null, mfaVerified: true });
 
   // A committed credit booking → issued invoice.
   const booking = await request(app).post('/api/bookings').set('Authorization', `Bearer ${agentToken}`).send(goa);
@@ -72,7 +72,7 @@ async function otherAgencyToken() {
   const user = await testPrisma.user.create({
     data: { email: `other-au-${counter}@example.com`, passwordHash: await hashPassword('Pass!23456'), role: 'AGENCY', agencyId: other.id },
   });
-  return issueAccessToken({ id: user.id, role: 'AGENCY', agencyId: other.id, mfaVerified: true });
+  return await tokenFor({ id: user.id, role: 'AGENCY', agencyId: other.id, mfaVerified: true });
 }
 
 const isPdf = (res: request.Response) => {

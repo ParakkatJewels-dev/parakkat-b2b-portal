@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { PaymentMode } from '@prisma/client';
 import { createApp } from '../../src/app';
 import { hashPassword } from '../../src/modules/auth/password.service';
-import { issueAccessToken } from '../../src/modules/auth/token.service';
+import { tokenFor } from '../setup/identity';
 import { signPaymentBody } from '../../src/lib/payments';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
 
@@ -46,9 +46,9 @@ async function setupAgency(opts: { paymentMode: PaymentMode; creditLimit: number
   const agencyUser = await testPrisma.user.create({
     data: { email: `au-${suffix}@example.com`, passwordHash: await hashPassword('Pass!23456'), role: 'AGENCY', agencyId: agency.id },
   });
-  const agentToken = issueAccessToken({ id: agent.id, role: 'AGENT', agencyId: agency.id, mfaVerified: true });
-  const agencyToken = issueAccessToken({ id: agencyUser.id, role: 'AGENCY', agencyId: agency.id, mfaVerified: true });
-  const adminToken = issueAccessToken({ id: admin.id, role: 'ADMIN', agencyId: null, mfaVerified: true });
+  const agentToken = await tokenFor({ id: agent.id, role: 'AGENT', agencyId: agency.id, mfaVerified: true });
+  const agencyToken = await tokenFor({ id: agencyUser.id, role: 'AGENCY', agencyId: agency.id, mfaVerified: true });
+  const adminToken = await tokenFor({ id: admin.id, role: 'ADMIN', agencyId: null, mfaVerified: true });
   return { agency, agentToken, agencyToken, adminToken };
 }
 

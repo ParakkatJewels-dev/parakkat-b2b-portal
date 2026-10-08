@@ -1,8 +1,24 @@
 import crypto from 'node:crypto';
-import bcrypt from 'bcrypt';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
+import { withNewLogin } from '../src/lib/identity';
 
 const prisma = new PrismaClient();
+
+/**
+ * A portal user plus its login in the configured identity provider (Supabase Auth, or the
+ * offline mock), sharing one id. Existing users are left untouched.
+ */
+async function ensureUser(
+  email: string,
+  password: string,
+  data: Omit<Prisma.UserUncheckedCreateInput, 'id' | 'email' | 'passwordHash'>,
+) {
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) return existing;
+  return withNewLogin({ email, password }, (login) =>
+    prisma.user.create({ data: { id: login.id, email, passwordHash: login.passwordHash, ...data } }),
+  );
+}
 
 function generateStrongPassword(): string {
   return crypto.randomBytes(18).toString('base64url');
@@ -22,19 +38,11 @@ async function main() {
     generated = true;
   }
 
-  const passwordHash = await bcrypt.hash(password, 12);
-
-  const user = await prisma.user.upsert({
-    where: { email },
-    update: {},
-    create: {
-      email,
-      passwordHash,
-      role: 'ADMIN',
-      status: 'ACTIVE',
-      mfaEnabled: false,
-      mfaMethod: 'NONE',
-    },
+  const user = await ensureUser(email, password, {
+    role: 'ADMIN',
+    status: 'ACTIVE',
+    mfaEnabled: false,
+    mfaMethod: 'NONE',
   });
 
   await prisma.auditLog.create({
@@ -59,9 +67,6 @@ async function main() {
   // AGENCY/AGENT roles don't force MFA, so these let you log in instantly for
   // testing without an authenticator app. Skipped in production.
   if (process.env.NODE_ENV !== 'production' && process.env.SEED_DEMO !== 'false') {
-    const agencyHash = await bcrypt.hash('agency123', 12);
-    const agentHash = await bcrypt.hash('agent123', 12);
-
     const agency = await prisma.agency.upsert({
       where: { id: '00000000-0000-0000-0000-0000000000a1' },
       update: {},
@@ -77,16 +82,8 @@ async function main() {
       },
     });
 
-    await prisma.user.upsert({
-      where: { email: 'agency@demo.com' },
-      update: {},
-      create: { email: 'agency@demo.com', passwordHash: agencyHash, role: 'AGENCY', agencyId: agency.id },
-    });
-    await prisma.user.upsert({
-      where: { email: 'agent@demo.com' },
-      update: {},
-      create: { email: 'agent@demo.com', passwordHash: agentHash, role: 'AGENT', agencyId: agency.id },
-    });
+    await ensureUser('agency@demo.com', 'agency123', { role: 'AGENCY', agencyId: agency.id });
+    await ensureUser('agent@demo.com', 'agent123', { role: 'AGENT', agencyId: agency.id });
 
     // Commercial terms so the demo agency can actually book (credit tier).
     const hasConfig = await prisma.commercialConfiguration.findFirst({

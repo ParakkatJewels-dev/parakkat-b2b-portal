@@ -74,8 +74,8 @@ describe('tenant isolation', () => {
     // than a usable access token — bypass by minting a token directly for
     // this cross-tenant-read assertion, which is orthogonal to the MFA flow
     // already covered by auth.flow.test.ts.
-    const { issueAccessToken } = await import('../../src/modules/auth/token.service');
-    const token = issueAccessToken({
+    const { tokenFor } = await import('../setup/identity');
+    const token = await tokenFor({
       id: admin.id,
       role: admin.role,
       agencyId: admin.agencyId,

@@ -1,30 +1,34 @@
 import { env } from '../../config/env';
+import { getIdentity } from '../../lib/identity';
 import { prisma } from '../../lib/prisma';
 import { getMfaPolicy } from '../settings/settings.service';
 
-/** Active login sessions across all users (non-revoked, unexpired refresh tokens). */
+/** Live Supabase Auth sessions of portal users, most recently active first. */
 export async function listActiveSessions() {
-  const tokens = await prisma.refreshToken.findMany({
-    where: { revokedAt: null, expiresAt: { gt: new Date() } },
-    orderBy: { createdAt: 'desc' },
-    take: 200,
-    include: { user: { select: { email: true, name: true, role: true } } },
+  const sessions = await getIdentity().listSessions(200);
+  const users = await prisma.user.findMany({
+    where: { id: { in: [...new Set(sessions.map((s) => s.userId))] } },
+    select: { id: true, email: true, name: true, role: true },
   });
-  return tokens.map((t) => ({
-    id: t.id,
-    user: t.user.name ?? t.user.email,
-    email: t.user.email,
-    role: t.user.role,
-    ip: t.ip,
-    userAgent: t.userAgent,
-    createdAt: t.createdAt,
-    expiresAt: t.expiresAt,
-  }));
+  const byId = new Map(users.map((u) => [u.id, u]));
+  return sessions.flatMap((s) => {
+    const user = byId.get(s.userId);
+    if (!user) return []; // an Auth account the portal does not know grants nothing; not listed
+    return [{
+      id: s.id,
+      user: user.name ?? user.email,
+      email: user.email,
+      role: user.role,
+      ip: s.ip,
+      userAgent: s.userAgent,
+      createdAt: s.createdAt,
+      lastActiveAt: s.refreshedAt ?? s.createdAt,
+    }];
+  });
 }
 
 export async function revokeSession(id: string): Promise<{ revoked: boolean }> {
-  const r = await prisma.refreshToken.updateMany({ where: { id, revokedAt: null }, data: { revokedAt: new Date() } });
-  return { revoked: r.count > 0 };
+  return { revoked: await getIdentity().revokeSession(id) };
 }
 
 /** Recent failed-login attempts, grouped by user with attempt counts (from the audit log). */
@@ -63,7 +67,7 @@ export function getSecurityPolicy() {
       };
     })(),
     session: {
-      accessTokenTtl: env.ACCESS_TOKEN_TTL,
+      provider: 'Supabase Auth',
       refreshTokenTtlDays: env.REFRESH_TOKEN_TTL_DAYS,
     },
   };

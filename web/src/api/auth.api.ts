@@ -25,10 +25,14 @@ export async function setupTotp(
   return res.data;
 }
 
+/**
+ * Confirms enrolment. Supabase Auth upgrades the session to aal2 and rotates its tokens: the
+ * returned access token (and the refresh cookie the server sets) replace the previous ones.
+ */
 export async function confirmTotp(
   mfaPendingTokenOrAccessToken: string,
   code: string,
-): Promise<{ mfaEnabled: boolean; mfaMethod: string }> {
+): Promise<{ mfaEnabled: boolean; mfaMethod: string; accessToken: string }> {
   const res = await httpClient.post(
     '/auth/mfa/setup/totp/confirm',
     { code },
@@ -52,5 +56,11 @@ export async function changePassword(
 
 export async function getMe(): Promise<AuthUser> {
   const res = await httpClient.get<AuthUser>('/users/me');
+  return res.data;
+}
+
+/** The signed-in user for a token that is not stored yet (right after an MFA step). */
+export async function getMeWithToken(accessToken: string): Promise<AuthUser> {
+  const res = await httpClient.get<AuthUser>('/users/me', { headers: { Authorization: `Bearer ${accessToken}` } });
   return res.data;
 }

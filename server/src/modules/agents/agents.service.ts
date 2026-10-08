@@ -1,9 +1,8 @@
 import type { ActorRole, Prisma, UserStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { ApiError } from '../../utils/apiError';
-import { hashPassword } from '../auth/password.service';
 import { generateStrongPassword } from '../auth/passwordPolicy';
-import { revokeAllUserTokens } from '../auth/token.service';
+import { getIdentity, withNewLogin } from '../../lib/identity';
 import { recordAuditLogSafe } from '../audit/audit.service';
 
 export interface AgentActor {
@@ -144,13 +143,13 @@ export async function createAgent(input: CreateAgentInput, actor: AgentActor) {
   if (existing) throw ApiError.conflict('A user with this email already exists');
 
   const tempPassword = input.password ?? genTempPassword();
-  const passwordHash = await hashPassword(tempPassword);
 
-  const agent = await prisma.user.create({
+  const agent = await withNewLogin({ email: input.email, password: tempPassword }, (login) => prisma.user.create({
     data: {
+      id: login.id,
       email: input.email,
       name: input.name,
-      passwordHash,
+      passwordHash: login.passwordHash,
       role: 'AGENT',
       agencyId,
       createdByUserId: actor.actorId,
@@ -162,7 +161,7 @@ export async function createAgent(input: CreateAgentInput, actor: AgentActor) {
       canViewReports: input.permissions?.canViewReports ?? false,
     },
     select: AGENT_SELECT,
-  });
+  }));
   await recordAuditLogSafe({
     entityType: 'User',
     entityId: agent.id,
@@ -200,7 +199,7 @@ export async function updateAgent(
 export async function setAgentStatus(agentId: string, status: UserStatus, actor: AgentActor) {
   await loadAgent(agentId, actor);
   const agent = await prisma.user.update({ where: { id: agentId }, data: { status }, select: AGENT_SELECT });
-  if (status === 'SUSPENDED') await revokeAllUserTokens(agentId); // disabling logs them out
+  if (status === 'SUSPENDED') await getIdentity().revokeUserSessions(agentId); // disabling logs them out
   await recordAuditLogSafe({
     entityType: 'User',
     entityId: agentId,
@@ -214,8 +213,9 @@ export async function setAgentStatus(agentId: string, status: UserStatus, actor:
 export async function resetAgentPassword(agentId: string, actor: AgentActor) {
   await loadAgent(agentId, actor);
   const tempPassword = genTempPassword();
-  await prisma.user.update({ where: { id: agentId }, data: { passwordHash: await hashPassword(tempPassword), mustChangePassword: true } });
-  await revokeAllUserTokens(agentId);
+  await getIdentity().setPassword(agentId, tempPassword);
+  await prisma.user.update({ where: { id: agentId }, data: { mustChangePassword: true } });
+  await getIdentity().revokeUserSessions(agentId);
   await recordAuditLogSafe({
     entityType: 'User',
     entityId: agentId,
@@ -228,7 +228,7 @@ export async function resetAgentPassword(agentId: string, actor: AgentActor) {
 
 export async function forceLogout(agentId: string, actor: AgentActor) {
   await loadAgent(agentId, actor);
-  await revokeAllUserTokens(agentId);
+  await getIdentity().revokeUserSessions(agentId);
   await recordAuditLogSafe({
     entityType: 'User',
     entityId: agentId,
@@ -249,10 +249,10 @@ export async function deleteAgent(agentId: string, actor: AgentActor) {
     throw ApiError.conflict('Agent has activity history — disable the agent instead of deleting');
   }
   await prisma.$transaction(async (tx) => {
-    await tx.refreshToken.deleteMany({ where: { userId: agentId } });
     await tx.otpCode.deleteMany({ where: { userId: agentId } });
     await tx.user.delete({ where: { id: agentId } });
   });
+  await getIdentity().deleteUser(agentId);
   await recordAuditLogSafe({
     entityType: 'User',
     entityId: agentId,

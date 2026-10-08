@@ -2,7 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { hashPassword } from '../../src/modules/auth/password.service';
-import { issueAccessToken } from '../../src/modules/auth/token.service';
+import { tokenFor } from '../setup/identity';
 import { loadSettings } from '../../src/modules/settings/settings.service';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
 
@@ -50,9 +50,9 @@ async function setup() {
     agency,
     adminEmail: admin.email,
     agencyEmail: agencyUser.email,
-    adminToken: issueAccessToken({ id: admin.id, role: 'ADMIN', agencyId: null, mfaVerified: true }),
-    agencyToken: issueAccessToken({ id: agencyUser.id, role: 'AGENCY', agencyId: agency.id, mfaVerified: true }),
-    agentToken: issueAccessToken({ id: agent.id, role: 'AGENT', agencyId: agency.id, mfaVerified: true }),
+    adminToken: await tokenFor({ id: admin.id, role: 'ADMIN', agencyId: null, mfaVerified: true }),
+    agencyToken: await tokenFor({ id: agencyUser.id, role: 'AGENCY', agencyId: agency.id, mfaVerified: true }),
+    agentToken: await tokenFor({ id: agent.id, role: 'AGENT', agencyId: agency.id, mfaVerified: true }),
   };
 }
 

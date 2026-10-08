@@ -2,7 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { hashPassword } from '../../src/modules/auth/password.service';
-import { issueAccessToken } from '../../src/modules/auth/token.service';
+import { tokenFor } from '../setup/identity';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
 
 const app = createApp();
@@ -15,7 +15,7 @@ async function adminToken(): Promise<string> {
       role: 'ADMIN',
     },
   });
-  return issueAccessToken({ id: user.id, role: user.role, agencyId: user.agencyId, mfaVerified: true });
+  return await tokenFor({ id: user.id, role: user.role, agencyId: user.agencyId, mfaVerified: true });
 }
 
 beforeEach(async () => {

@@ -8,7 +8,8 @@ import { recordAuditLog, recordAuditLogSafe } from '../audit/audit.service';
 import { transitionApplication } from '../lifecycle/lifecycle.service';
 import { notify } from '../notifications/notification.service';
 import { generateStrongPassword } from '../auth/passwordPolicy';
-import { hashPassword } from '../auth/password.service';
+import { getIdentity } from '../../lib/identity';
+import { logger } from '../../lib/logger';
 import { env } from '../../config/env';
 import { getTierPreset } from '../commercial/tiers';
 import { resolveCommercialTerms } from '../commercial/commercial.mapping';
@@ -48,6 +49,9 @@ export async function createAgency(
   }
   const terms = resolveCommercialTerms(preset);
 
+  // The agency user's Auth login is created inside the transaction below; if anything after it
+  // fails, the database rolls back and the login is removed here, so nothing is left half-made.
+  let newLoginId: string | undefined;
   const { agency, temporaryPassword } = await prisma.$transaction(async (tx) => {
     // 1. Create the dummy/linked AgencyApplication record
     const app = await tx.agencyApplication.create({
@@ -142,11 +146,13 @@ export async function createAgency(
     let tempPassword = '';
     if (!existing) {
       tempPassword = generateStrongPassword(14);
-      const passwordHash = await hashPassword(tempPassword);
+      const login = await getIdentity().createUser({ email: agencyUserEmail, password: tempPassword });
+      newLoginId = login.id;
       const user = await tx.user.create({
         data: {
+          id: login.id,
           email: agencyUserEmail,
-          passwordHash,
+          passwordHash: login.passwordHash,
           role: 'AGENCY',
           agencyId: createdAgency.id,
           mustChangePassword: true,
@@ -173,6 +179,13 @@ export async function createAgency(
     }, tx);
 
     return { agency: createdAgency, temporaryPassword: tempPassword || undefined };
+  }).catch(async (error: unknown) => {
+    if (newLoginId) {
+      await getIdentity().deleteUser(newLoginId).catch((cleanupError: unknown) =>
+        logger.error('Could not remove the login of an agency that failed to save', { userId: newLoginId, cleanupError }),
+      );
+    }
+    throw error;
   });
 
   // 5. Send notification with credentials
@@ -206,12 +219,14 @@ export async function deleteAgency(agencyId: string, actor: Actor) {
     throw ApiError.conflict('Cannot delete an agency that has bookings, invoices, or payments');
   }
 
+  const users = await prisma.user.findMany({ where: { agencyId }, select: { id: true } });
   await prisma.$transaction(async (tx) => {
     await tx.user.deleteMany({ where: { agencyId } });
     await tx.document.updateMany({ where: { agencyId }, data: { agencyId: null } });
     // commercialConfigurations cascade on agency delete.
     await tx.agency.delete({ where: { id: agencyId } });
   });
+  for (const user of users) await getIdentity().deleteUser(user.id);
   await recordAuditLogSafe({
     entityType: 'Agency',
     entityId: agencyId,

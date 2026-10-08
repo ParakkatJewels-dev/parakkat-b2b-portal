@@ -195,9 +195,12 @@ enum ActorRole {
 // ---------------------------------------------------------------------------
 
 model User {
+  // Same id as the user's Supabase Auth account (lib/identity), which owns the credentials.
   id           String     @id @default(uuid())
   email        String     @unique
-  passwordHash String
+  // Only the offline mock identity provider stores a hash here (tests / local dev). In Supabase
+  // deployments the password lives in Supabase Auth and this stays null.
+  passwordHash String?
   role         Role
   status       UserStatus @default(ACTIVE)
   // Display name (agents/sub-users); optional for legacy rows.
@@ -231,6 +234,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   refreshTokens           RefreshToken[]
+  mfaSessions             MfaSession[]
   otpCodes                OtpCode[]
   uploadedDocuments       Document[]                @relation("DocumentUploadedBy")
   decidedApplications     AgencyApplication[]       @relation("ApplicationDecidedBy")
@@ -244,6 +248,7 @@ model User {
   @@index([role])
 }
 
+// Retired: sessions now live in Supabase Auth. Kept (unused) so a rollback stays possible.
 model RefreshToken {
   id        String    @id @default(uuid())
   userId    String
@@ -257,6 +262,17 @@ model RefreshToken {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+// Supabase Auth sessions that passed the EMAIL second factor (TOTP sessions carry aal2 in their
+// token instead). Keyed by the Auth session id, so a refresh keeps it and a revocation ends it.
+model MfaSession {
+  sessionId  String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verifiedAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model OtpCode {

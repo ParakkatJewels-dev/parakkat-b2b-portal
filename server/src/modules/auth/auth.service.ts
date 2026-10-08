@@ -1,21 +1,11 @@
 import type { Role, User } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+import { getIdentity, type IdentitySession } from '../../lib/identity';
 import { ApiError } from '../../utils/apiError';
 import { recordAuditLogSafe } from '../audit/audit.service';
 import { isMaintenanceMode, getMfaPolicy } from '../settings/settings.service';
-import { hashPassword, verifyPassword } from './password.service';
 import { assertStrongPassword } from './passwordPolicy';
-import {
-  type RefreshTokenMeta,
-  issueAccessToken,
-  issueMfaPendingToken,
-  issueRefreshToken,
-  revokeAllUserTokens,
-  revokeRefreshToken,
-  rotateRefreshToken,
-  verifyMfaPendingToken,
-} from './token.service';
-import { sendLoginEmailOtp, verifyEmailLoginCode, verifyTotpLoginCode } from './mfa/mfa.service';
+import { sendLoginEmailOtp, verifyEmailLoginCode } from './mfa/mfa.service';
 
 /**
  * v3 §10.2 — mandatory-MFA matrix, now admin-configurable at runtime (System
@@ -32,7 +22,7 @@ export function isMfaRequiredForRole(role: Role, mfaEnabled: boolean): boolean {
   return mfaEnabled;
 }
 
-interface SafeUser {
+export interface SafeUser {
   id: string;
   email: string;
   role: Role;
@@ -42,7 +32,7 @@ interface SafeUser {
   mustChangePassword: boolean;
 }
 
-function toSafeUser(user: User): SafeUser {
+export function toSafeUser(user: User): SafeUser {
   return {
     id: user.id,
     email: user.email,
@@ -54,225 +44,198 @@ function toSafeUser(user: User): SafeUser {
   };
 }
 
+export interface RequestMeta {
+  userAgent?: string;
+  ip?: string;
+}
+
+/**
+ * Every outcome carries the Supabase session: the controller keeps its refresh token in the
+ * httpOnly cookie. A session that still owes MFA can only reach the MFA routes
+ * (middleware/auth.ts), so handing it out before the second factor grants nothing else.
+ */
 export type LoginResult =
-  | { status: 'ok'; user: SafeUser; accessToken: string; refreshToken: string }
-  | { status: 'mfa_required'; mfaMethod: 'TOTP' | 'EMAIL'; mfaPendingToken: string }
-  | { status: 'mfa_setup_required'; mfaPendingToken: string };
+  | { status: 'ok'; user: SafeUser; session: IdentitySession }
+  | { status: 'mfa_required'; mfaMethod: 'TOTP' | 'EMAIL'; session: IdentitySession }
+  | { status: 'mfa_setup_required'; session: IdentitySession };
 
-export async function login(
-  email: string,
-  password: string,
-  meta: RefreshTokenMeta,
-): Promise<LoginResult> {
-  const user = await prisma.user.findUnique({ where: { email } });
+const audit = (user: Pick<User, 'id' | 'role'>, event: string) =>
+  recordAuditLogSafe({ entityType: 'User', entityId: user.id, event, actorId: user.id, actorRole: user.role });
 
-  if (!user) {
+export async function login(email: string, password: string, meta: RequestMeta): Promise<LoginResult> {
+  const identity = getIdentity();
+  const [user, session] = await Promise.all([
+    prisma.user.findUnique({ where: { email } }),
+    identity.signInWithPassword(email, password, meta),
+  ]);
+
+  if (!session) {
+    if (user) await audit(user, 'LOGIN_FAILED');
     throw ApiError.unauthorized('Invalid email or password');
   }
-
-  const passwordOk = await verifyPassword(password, user.passwordHash);
-  if (!passwordOk) {
-    await recordAuditLogSafe({
-      entityType: 'User',
-      entityId: user.id,
-      event: 'LOGIN_FAILED',
-      actorId: user.id,
-      actorRole: user.role,
-    });
+  // An Auth account with no portal user behind it (or a different one) grants nothing.
+  if (!user || user.id !== session.userId) {
+    await identity.revokeSession(session.sessionId);
     throw ApiError.unauthorized('Invalid email or password');
   }
 
   if (user.status === 'SUSPENDED') {
-    await recordAuditLogSafe({
-      entityType: 'User',
-      entityId: user.id,
-      event: 'LOGIN_BLOCKED_SUSPENDED',
-      actorId: user.id,
-      actorRole: user.role,
-    });
+    await identity.revokeSession(session.sessionId);
+    await audit(user, 'LOGIN_BLOCKED_SUSPENDED');
     throw ApiError.forbidden('This account has been suspended');
   }
 
   // Maintenance mode (System Settings → Portal): only staff (ADMIN/VERIFIER) may
   // sign in; agency/agent logins are blocked until it is turned off.
   if (isMaintenanceMode() && user.role !== 'ADMIN' && user.role !== 'VERIFIER') {
-    await recordAuditLogSafe({
-      entityType: 'User',
-      entityId: user.id,
-      event: 'LOGIN_BLOCKED_MAINTENANCE',
-      actorId: user.id,
-      actorRole: user.role,
-    });
+    await identity.revokeSession(session.sessionId);
+    await audit(user, 'LOGIN_BLOCKED_MAINTENANCE');
     throw ApiError.forbidden('The portal is under maintenance. Please try again later.');
   }
 
   const mfaRequired = isMfaRequiredForRole(user.role, user.mfaEnabled);
+  // A TOTP user whose authenticator is no longer registered with Supabase Auth (e.g. accounts
+  // moved over from the previous login system) enrols again rather than being locked out.
+  const factorReady = user.mfaMethod !== 'TOTP' || (await identity.hasVerifiedTotp(user.id));
 
-  if (mfaRequired && !user.mfaEnabled) {
-    await recordAuditLogSafe({
-      entityType: 'User',
-      entityId: user.id,
-      event: 'LOGIN_MFA_SETUP_REQUIRED',
-      actorId: user.id,
-      actorRole: user.role,
-    });
-    return { status: 'mfa_setup_required', mfaPendingToken: issueMfaPendingToken(user.id) };
+  if (mfaRequired && (!user.mfaEnabled || !factorReady)) {
+    await audit(user, 'LOGIN_MFA_SETUP_REQUIRED');
+    return { status: 'mfa_setup_required', session };
   }
 
-  if (mfaRequired && user.mfaEnabled) {
-    if (user.mfaMethod === 'EMAIL') {
-      await sendLoginEmailOtp(user.id, user.email);
-    }
-    await recordAuditLogSafe({
-      entityType: 'User',
-      entityId: user.id,
-      event: 'LOGIN_MFA_PENDING',
-      actorId: user.id,
-      actorRole: user.role,
-    });
-    return {
-      status: 'mfa_required',
-      mfaMethod: user.mfaMethod as 'TOTP' | 'EMAIL',
-      mfaPendingToken: issueMfaPendingToken(user.id),
-    };
+  if (mfaRequired) {
+    if (user.mfaMethod === 'EMAIL') await sendLoginEmailOtp(user.id, user.email);
+    await audit(user, 'LOGIN_MFA_PENDING');
+    return { status: 'mfa_required', mfaMethod: user.mfaMethod as 'TOTP' | 'EMAIL', session };
   }
 
-  const accessToken = issueAccessToken({
-    id: user.id,
-    role: user.role,
-    agencyId: user.agencyId,
-    mfaVerified: true,
-  });
-  const { token: refreshToken } = await issueRefreshToken(user.id, meta);
-
-  await recordAuditLogSafe({
-    entityType: 'User',
-    entityId: user.id,
-    event: 'LOGIN_SUCCESS',
-    actorId: user.id,
-    actorRole: user.role,
-  });
-
-  return { status: 'ok', user: toSafeUser(user), accessToken, refreshToken };
+  await audit(user, 'LOGIN_SUCCESS');
+  return { status: 'ok', user: toSafeUser(user), session };
 }
 
 export interface MfaVerifyResult {
   user: SafeUser;
   accessToken: string;
-  refreshToken: string;
+  /** Set when the provider rotated the session's tokens (TOTP); the cookie must follow. */
+  session: IdentitySession | null;
 }
 
-export async function verifyMfaAndLogin(
-  mfaPendingToken: string,
-  code: string,
-  meta: RefreshTokenMeta,
-): Promise<MfaVerifyResult> {
-  let userId: string;
-  try {
-    userId = verifyMfaPendingToken(mfaPendingToken).sub;
-  } catch {
+/**
+ * Completes a login that owes its second factor. TOTP is checked by Supabase Auth and upgrades
+ * the session to aal2; an EMAIL code is checked here and recorded against the session id.
+ */
+export async function verifyMfaAndLogin(mfaPendingToken: string, code: string): Promise<MfaVerifyResult> {
+  const identity = getIdentity();
+  const claims = await identity.verifyAccessToken(mfaPendingToken);
+  if (!claims || !(await identity.isSessionActive(claims.sessionId))) {
     throw ApiError.unauthorized('MFA session expired, please log in again');
   }
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: claims.userId } });
 
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-
-  const valid =
-    user.mfaMethod === 'TOTP'
-      ? await verifyTotpLoginCode(user.id, code)
-      : await verifyEmailLoginCode(user.id, code);
+  let session: IdentitySession | null = null;
+  let valid: boolean;
+  if (user.mfaMethod === 'TOTP') {
+    session = await identity.verifyTotp(mfaPendingToken, code);
+    valid = session !== null;
+  } else {
+    valid = await verifyEmailLoginCode(user.id, code);
+    if (valid) await recordEmailMfa(claims.sessionId, user.id);
+  }
 
   if (!valid) {
-    await recordAuditLogSafe({
-      entityType: 'User',
-      entityId: user.id,
-      event: 'LOGIN_MFA_FAILED',
-      actorId: user.id,
-      actorRole: user.role,
-    });
+    await audit(user, 'LOGIN_MFA_FAILED');
     throw ApiError.unauthorized('Invalid or expired code');
   }
 
-  const accessToken = issueAccessToken({
-    id: user.id,
-    role: user.role,
-    agencyId: user.agencyId,
-    mfaVerified: true,
-  });
-  const { token: refreshToken } = await issueRefreshToken(user.id, meta);
-
-  await recordAuditLogSafe({
-    entityType: 'User',
-    entityId: user.id,
-    event: 'LOGIN_SUCCESS_MFA',
-    actorId: user.id,
-    actorRole: user.role,
-  });
-
-  return { user: toSafeUser(user), accessToken, refreshToken };
+  await audit(user, 'LOGIN_SUCCESS_MFA');
+  return { user: toSafeUser(user), accessToken: session?.accessToken ?? mfaPendingToken, session };
 }
 
-export interface RefreshResult {
-  accessToken: string;
-  refreshToken: string;
-}
-
-export async function refreshSession(
-  rawRefreshToken: string,
-  meta: RefreshTokenMeta,
-): Promise<RefreshResult> {
-  const { userId, refresh } = await rotateRefreshToken(rawRefreshToken, meta);
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  const accessToken = issueAccessToken({
-    id: user.id,
-    role: user.role,
-    agencyId: user.agencyId,
-    mfaVerified: true,
+/** Marks an Auth session as having passed the EMAIL second factor. */
+export async function recordEmailMfa(sessionId: string, userId: string): Promise<void> {
+  await prisma.mfaSession.upsert({
+    where: { sessionId },
+    create: { sessionId, userId },
+    update: { verifiedAt: new Date() },
   });
-  return { accessToken, refreshToken: refresh.token };
 }
 
-export async function logout(rawRefreshToken: string): Promise<void> {
-  await revokeRefreshToken(rawRefreshToken);
+/**
+ * Rotates the refresh token. A suspended account's session is ended rather than renewed. A
+ * replayed (already rotated) token is treated as stolen: it is refused, audited, and every
+ * session of that user is ended so the thief's copy dies with the owner's.
+ */
+export async function refreshSession(refreshToken: string): Promise<IdentitySession> {
+  const identity = getIdentity();
+  const outcome = await identity.refresh(refreshToken);
+  if (outcome.status === 'reused') {
+    await identity.revokeUserSessions(outcome.userId);
+    await recordAuditLogSafe({
+      entityType: 'User',
+      entityId: outcome.userId,
+      event: 'TOKEN_REUSE_DETECTED',
+      actorRole: 'SYSTEM',
+    });
+  }
+  if (outcome.status !== 'ok') throw ApiError.unauthorized('Refresh token is no longer valid');
+  const { session } = outcome;
+  const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { status: true } });
+  if (!user || user.status === 'SUSPENDED') {
+    await identity.revokeSession(session.sessionId);
+    throw ApiError.unauthorized('Refresh token is no longer valid');
+  }
+  return session;
+}
+
+/** Ends the caller's session — identified by the bearer token, or failing that by the cookie. */
+export async function logout(accessToken: string | undefined, refreshToken: string | undefined): Promise<void> {
+  const identity = getIdentity();
+  const claims = accessToken ? await identity.verifyAccessToken(accessToken) : null;
+  if (claims) {
+    await identity.revokeSession(claims.sessionId);
+    return;
+  }
+  if (refreshToken) {
+    const outcome = await identity.refresh(refreshToken).catch(() => null);
+    if (outcome?.status === 'ok') await identity.revokeSession(outcome.session.sessionId);
+  }
 }
 
 export interface ChangePasswordResult {
   user: SafeUser;
-  accessToken: string;
-  refreshToken: string;
 }
 
 /**
- * v3 §10.2 — self-service password change. Verifies the current password,
- * enforces the password policy on the new one, clears mustChangePassword, and
- * revokes every existing session (defence: a changed password invalidates other
- * devices). Issues a fresh session so the caller stays logged in.
+ * v3 §10.2 — self-service password change. Verifies the current password, enforces the policy
+ * on the new one, clears mustChangePassword and ends every OTHER session (a changed password
+ * invalidates other devices). The caller's own session — including any completed second
+ * factor — stays signed in.
  */
 export async function changePassword(
   userId: string,
+  sessionId: string | undefined,
   currentPassword: string,
   newPassword: string,
-  meta: RefreshTokenMeta,
 ): Promise<ChangePasswordResult> {
+  const identity = getIdentity();
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
 
-  const ok = await verifyPassword(currentPassword, user.passwordHash);
-  if (!ok) {
-    await recordAuditLogSafe({ entityType: 'User', entityId: user.id, event: 'PASSWORD_CHANGE_FAILED', actorId: user.id, actorRole: user.role });
+  const check = await identity.signInWithPassword(user.email, currentPassword);
+  if (!check) {
+    await audit(user, 'PASSWORD_CHANGE_FAILED');
     throw ApiError.badRequest('Current password is incorrect');
   }
+  // The check itself must not leave a session behind.
+  await identity.revokeSession(check.sessionId);
+
   assertStrongPassword(newPassword);
-  if (await verifyPassword(newPassword, user.passwordHash)) {
+  if (newPassword === currentPassword) {
     throw ApiError.badRequest('New password must be different from the current one');
   }
 
-  const passwordHash = await hashPassword(newPassword);
-  await prisma.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: false } });
-  // Invalidate all sessions, then mint a fresh one for this device.
-  await revokeAllUserTokens(user.id);
-  await recordAuditLogSafe({ entityType: 'User', entityId: user.id, event: 'PASSWORD_CHANGED', actorId: user.id, actorRole: user.role });
-
-  const updated = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
-  const accessToken = issueAccessToken({ id: updated.id, role: updated.role, agencyId: updated.agencyId, mfaVerified: true });
-  const { token: refreshToken } = await issueRefreshToken(updated.id, meta);
-  return { user: toSafeUser(updated), accessToken, refreshToken };
+  await identity.setPassword(user.id, newPassword);
+  const updated = await prisma.user.update({ where: { id: user.id }, data: { mustChangePassword: false } });
+  await identity.revokeUserSessions(user.id, { exceptSessionId: sessionId });
+  await audit(user, 'PASSWORD_CHANGED');
+  return { user: toSafeUser(updated) };
 }

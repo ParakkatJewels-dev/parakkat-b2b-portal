@@ -57,6 +57,7 @@ export function SecurityPage() {
     { header: 'IP', className: 'font-mono text-xs text-slate-600', render: (s) => s.ip ?? '—' },
     { header: 'Device', render: (s) => <span className="block max-w-[200px] truncate text-xs text-slate-500">{s.userAgent ?? '—'}</span> },
     { header: 'Started', render: (s) => <span className="text-slate-500">{fmt(s.createdAt)}</span> },
+    { header: 'Last active', render: (s) => <span className="text-slate-500">{fmt(s.lastActiveAt)}</span> },
     { header: 'Actions', align: 'right', render: (s) => <Button variant="danger" disabled={revoke.isPending} onClick={() => revoke.mutate(s.id)}>Revoke</Button> },
   ];
 
@@ -129,8 +130,8 @@ export function SecurityPage() {
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-2 text-sm font-semibold text-slate-700">Sessions</div>
-            <Row label="Access token TTL" value={p.session.accessTokenTtl} />
-            <Row label="Refresh token TTL" value={`${p.session.refreshTokenTtlDays} days`} />
+            <Row label="Sign-in provider" value={p.session.provider} />
+            <Row label="Stay signed in for" value={`${p.session.refreshTokenTtlDays} days`} />
           </div>
         </div>
       )}

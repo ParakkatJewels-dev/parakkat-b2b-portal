@@ -32,16 +32,21 @@ const baseSchema = z.object({
 
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
 
-  JWT_ACCESS_SECRET: z.string().min(16, 'JWT_ACCESS_SECRET must be at least 16 characters'),
-  JWT_REFRESH_SECRET: z.string().min(16, 'JWT_REFRESH_SECRET must be at least 16 characters'),
-  JWT_MFA_SECRET: z.string().min(16, 'JWT_MFA_SECRET must be at least 16 characters'),
-  ACCESS_TOKEN_TTL: z.string().default('15m'),
+  // Identity: Supabase Auth owns users, passwords, sessions, refresh-token rotation and TOTP
+  // factors (lib/identity). `mock` is an in-memory stand-in for tests and offline development —
+  // rejected in production like the other mock providers.
+  // Default: Supabase in production, the mock everywhere else. The mock keeps sessions in process
+  // memory, so it cannot serve a multi-instance (serverless) deployment.
+  IDENTITY_PROVIDER: z.enum(['supabase', 'mock']).default(process.env.NODE_ENV === 'production' ? 'supabase' : 'mock'),
+  // Public key used for Supabase Auth's password/refresh grants (falls back to the service role).
+  SUPABASE_PUBLISHABLE_KEY: z.string().optional(),
+  // Only for projects still on the legacy shared HS256 secret; others verify against the
+  // project's published signing keys (JWKS).
+  SUPABASE_JWT_SECRET: z.string().optional(),
+  // Signs the mock provider's tokens (tests / local dev only).
+  IDENTITY_MOCK_JWT_SECRET: z.string().min(32).default('local-identity-mock-secret-not-for-production'),
+  // Lifetime of the httpOnly cookie that carries the Supabase refresh token.
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
-  MFA_PENDING_TOKEN_TTL: z.string().default('5m'),
-
-  MFA_ENCRYPTION_KEY: z
-    .string()
-    .length(64, 'MFA_ENCRYPTION_KEY must be a 64-char hex string (32 bytes) for AES-256-GCM'),
 
   // Master kill-switch: when true, MFA is OFF for everyone — no setup prompt, no
   // second factor, even for users who previously enabled it. Flip back to false
@@ -244,6 +249,11 @@ const data = parsed.data;
 if (data.NODE_ENV === 'production') {
   const productionErrors: string[] = [];
   if (!data.CRON_SECRET) productionErrors.push('CRON_SECRET is required in production');
+  if (data.IDENTITY_PROVIDER === 'supabase') {
+    if (!data.SUPABASE_URL) productionErrors.push('SUPABASE_URL is required when IDENTITY_PROVIDER=supabase');
+    if (!data.SUPABASE_SERVICE_ROLE_KEY)
+      productionErrors.push('SUPABASE_SERVICE_ROLE_KEY is required when IDENTITY_PROVIDER=supabase');
+  }
   if (data.STORAGE_PROVIDER === 's3') {
     if (!data.S3_BUCKET) productionErrors.push('S3_BUCKET is required when STORAGE_PROVIDER=s3');
     if (!data.S3_REGION) productionErrors.push('S3_REGION is required when STORAGE_PROVIDER=s3');
@@ -310,6 +320,7 @@ if (data.NODE_ENV === 'production') {
   // ALLOW_MOCK_PROVIDERS=true declares this a demo/staging deployment.
   if (!data.ALLOW_MOCK_PROVIDERS) {
     const mocked: [string, boolean][] = [
+      ['IDENTITY_PROVIDER=mock', data.IDENTITY_PROVIDER === 'mock'],
       ['INVENTORY_PROVIDER=mock', data.INVENTORY_PROVIDER === 'mock'],
       ['CRS_PROVIDER=mock', data.CRS_PROVIDER === 'mock'],
       ['PAYMENT_PROVIDER=mock', data.PAYMENT_PROVIDER === 'mock'],

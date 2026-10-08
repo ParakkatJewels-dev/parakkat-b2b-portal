@@ -23,10 +23,17 @@ interface NavigateOptions {
   state?: unknown;
 }
 
-// react-router carried `state` on the history entry. Next.js navigation has no equivalent, so
-// state travels in memory to the next screen that asks for it — the same lifetime it had for
-// in-app navigation (it was never meant to survive a full reload).
-let pendingState: { pathname: string; state: unknown } | null = null;
+// react-router carried `state` on the history entry. Next.js navigation has no equivalent, so it
+// is kept in memory per destination path — the same lifetime it had for in-app navigation (it was
+// never meant to survive a full reload). Keyed by path so the screen being left still sees its
+// own state while the next one loads; react-router behaved the same way.
+const navigationState = new Map<string, unknown>();
+
+function rememberState(to: To, state: unknown): void {
+  const pathname = pathOf(to);
+  if (state === undefined) navigationState.delete(pathname);
+  else navigationState.set(pathname, state);
+}
 
 function pathOf(to: To): string {
   return new URL(to, 'http://local').pathname;
@@ -41,7 +48,7 @@ export function useNavigate() {
         else router.forward();
         return;
       }
-      pendingState = options.state === undefined ? null : { pathname: pathOf(to), state: options.state };
+      rememberState(to, options.state);
       if (options.replace) router.replace(to);
       else router.push(to);
     },
@@ -60,8 +67,7 @@ export function useLocation(): Location {
   const pathname = usePathname() ?? '/';
   const params = useNextSearchParams();
   const search = params?.toString() ? `?${params.toString()}` : '';
-  const state = pendingState && pendingState.pathname === pathname ? pendingState.state : undefined;
-  return { pathname, search, hash: '', state };
+  return { pathname, search, hash: '', state: navigationState.get(pathname) };
 }
 
 export function useParams<T extends Record<string, string | undefined> = Record<string, string | undefined>>(): T {
@@ -109,7 +115,7 @@ export function Link({ to, replace, state, onClick, ...rest }: LinkProps) {
       href={to}
       replace={replace}
       onClick={(event) => {
-        if (state !== undefined) pendingState = { pathname: pathOf(to), state };
+        rememberState(to, state);
         onClick?.(event);
       }}
       {...rest}

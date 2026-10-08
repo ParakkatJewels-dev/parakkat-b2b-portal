@@ -17,7 +17,8 @@ export async function startTotp(): Promise<TotpSetup> {
   return (await httpClient.post('/auth/mfa/setup/totp', {})).data;
 }
 
-export async function confirmTotp(code: string): Promise<{ mfaEnabled: boolean; mfaMethod: string }> {
+/** Confirms enrolment; the session is upgraded and its tokens rotated (new access token returned). */
+export async function confirmTotp(code: string): Promise<{ mfaEnabled: boolean; mfaMethod: string; accessToken: string }> {
   return (await httpClient.post('/auth/mfa/setup/totp/confirm', { code })).data;
 }
 

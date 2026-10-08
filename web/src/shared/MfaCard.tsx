@@ -3,6 +3,7 @@ import { Badge, Button } from '../components/ui/kit';
 import { useAuth } from '../hooks/useAuth';
 import * as mfaApi from '../api/mfa.api';
 import * as authApi from '../api/auth.api';
+import { useAuthStore } from '../store/authStore';
 
 type Mode = 'idle' | 'totp' | 'email';
 
@@ -24,7 +25,9 @@ export function MfaCard() {
 
   const refreshUser = async () => {
     const fresh = await authApi.getMe();
-    if (accessToken) setSession(accessToken, fresh);
+    // Read the store, not the render-time value: confirming TOTP replaces the token.
+    const current = useAuthStore.getState().accessToken ?? accessToken;
+    if (current) setSession(current, fresh);
   };
   const errMsg = (e: unknown) => (e as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Something went wrong';
   const reset = () => { setMode('idle'); setSetup(null); setCode(''); setError(null); };
@@ -44,8 +47,12 @@ export function MfaCard() {
   const confirm = async () => {
     setBusy(true); setError(null);
     try {
-      if (mode === 'totp') await mfaApi.confirmTotp(code);
-      else await mfaApi.confirmEmailOtp(code);
+      if (mode === 'totp') {
+        const { accessToken: upgraded } = await mfaApi.confirmTotp(code);
+        useAuthStore.getState().setAccessToken(upgraded);
+      } else {
+        await mfaApi.confirmEmailOtp(code);
+      }
       await refreshUser();
       reset();
       setNotice('Two-factor authentication is now on.');
