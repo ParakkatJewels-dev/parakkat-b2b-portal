@@ -8,7 +8,7 @@
   "crons": [
     {
       "path": "/api/cron/maintenance",
-      "schedule": "0 2 * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/dunning",

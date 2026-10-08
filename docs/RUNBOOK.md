@@ -38,8 +38,8 @@ npm run dev                            # app :3000 (proxies /api) + API :4000
   `REALTIME_ENABLED=true` with a random `REALTIME_CHANNEL_SECRET`.
 - Apply migrations separately with `npm run db:migrate:deploy`, then deploy. Verify
   `/api/health/live`, `/api/health/ready`, a login, a deep link, and uploaded-file access.
-- `web/vercel.json` invokes maintenance daily at 02:00 UTC and dunning at 03:00 UTC (Vercel Hobby
-  allows only daily crons). On Pro, change maintenance to `*/5 * * * *`.
+- `web/vercel.json` invokes maintenance every five minutes and dunning daily. The five-minute schedule
+  requires Vercel Pro; use an external scheduler against the same protected routes otherwise.
 - Turn on per-role MFA enforcement in System Settings → Security (the `MFA_ENFORCE*` env flags are
   not read; only `MFA_DISABLED` is), and switch providers to `live`/`airpay` when their credentials/contracts
   are available (see `docs/API-CONTRACTS.md`).
