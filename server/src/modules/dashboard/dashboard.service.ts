@@ -1,5 +1,6 @@
 import type { BookingState } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+import { businessToday, startOfBusinessDay } from '../../utils/businessDate';
 
 function dayKey(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -187,8 +188,8 @@ export async function adminSummary(range: DateRange) {
  */
 export async function agencySummary(agencyId: string, range: DateRange, agentId?: string) {
   const bookingWhere = agentId ? { agencyId, agentId } : { agencyId };
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  const startOfToday = startOfBusinessDay();
+  const today = businessToday();
   const liveStates = { notIn: ['CANCELLED', 'EXPIRED'] as BookingState[] };
   // One transaction / one connection for the whole agency dashboard (incl. the
   // balance inputs, inlined so there's no nested query fan-out).
@@ -206,7 +207,7 @@ export async function agencySummary(agencyId: string, range: DateRange, agentId?
       }),
       prisma.booking.aggregate({ where: { ...bookingWhere, state: liveStates }, _sum: { agencyPrice: true } }),
       prisma.booking.count({ where: { ...bookingWhere, createdAt: { gte: startOfToday } } }),
-      prisma.booking.count({ where: { ...bookingWhere, checkIn: { gte: startOfToday }, state: liveStates } }),
+      prisma.booking.count({ where: { ...bookingWhere, checkIn: { gte: today }, state: liveStates } }),
       prisma.user.count({ where: { agencyId, role: 'AGENT', status: 'ACTIVE' } }),
     ]);
 

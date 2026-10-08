@@ -12,11 +12,10 @@ import { computeCancellation } from './cancellation';
 import { computeGst, generateIrn } from './gst';
 import { getInvoiceNumberFormat } from '../settings/settings.service';
 import { enqueueCrsEvent, flushOutbox } from './crsOutbox.service';
+import { businessYearMonth } from '../../utils/businessDate';
 
 function invoiceNumber(): string {
-  const now = new Date();
-  const yyyy = String(now.getFullYear());
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const { yyyy, mm } = businessYearMonth();
   const rand = crypto.randomBytes(3).toString('hex').toUpperCase();
   // Admin-configurable template (System Settings → Financial). Supported tokens:
   // {YYYY} {YY} {MM} {RAND}. {RAND} guarantees uniqueness.
@@ -32,8 +31,8 @@ function invoiceNumber(): string {
 }
 
 function creditNoteNumber(): string {
-  const now = new Date();
-  const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const { yyyy, mm } = businessYearMonth();
+  const ym = `${yyyy}${mm}`;
   return `CN-${ym}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 }
 
