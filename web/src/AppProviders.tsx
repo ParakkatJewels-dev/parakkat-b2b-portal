@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './api/queryClient';
-import { httpClient } from './api/httpClient';
+import { refreshAccessToken } from './api/httpClient';
 import * as authApi from './api/auth.api';
 import { hasSessionHint, useAuthStore } from './store/authStore';
 import { useRealtime } from './hooks/useRealtime';
@@ -26,8 +26,7 @@ function useSessionBootstrap() {
         return;
       }
       try {
-        const res = await httpClient.post('/auth/refresh');
-        const accessToken = res.data.accessToken as string;
+        const accessToken = await refreshAccessToken();
         useAuthStore.getState().setAccessToken(accessToken);
         const user = await authApi.getMe();
         setSession(accessToken, user);

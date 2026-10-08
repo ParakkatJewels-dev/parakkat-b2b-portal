@@ -23,7 +23,11 @@ interface RetriableConfig extends InternalAxiosRequestConfig {
 
 let refreshPromise: Promise<string> | null = null;
 
-async function refreshAccessToken(): Promise<string> {
+/**
+ * Trades the refresh cookie for a new access token. Concurrent callers share one request: each
+ * refresh rotates the cookie, so a second request racing the first would present a used token.
+ */
+export async function refreshAccessToken(): Promise<string> {
   if (!refreshPromise) {
     refreshPromise = axios
       .post(

@@ -101,7 +101,7 @@ export function AgentDashboard() {
               <div className="relative z-10">
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Welcome Back!</h1>
                 <p className="mt-1.5 text-blue-100 max-w-xl text-sm sm:text-base">
-                  Easily search resorts, complete bookings instantly, and manage your clients' stays from one place.
+                  Easily search resorts, complete bookings instantly, and manage your clients&apos; stays from one place.
                 </p>
                 
                 <div className="mt-5 flex flex-wrap gap-2.5">
