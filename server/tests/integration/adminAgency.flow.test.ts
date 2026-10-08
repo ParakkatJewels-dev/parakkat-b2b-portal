@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { hashPassword } from '../../src/modules/auth/password.service';
+import { getTierPreset } from '../../src/modules/commercial/tiers';
 import { tokenFor } from '../setup/identity';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
 
@@ -57,7 +58,7 @@ describe('Admin Direct Agency Creation Flow (D7 Exception)', () => {
     expect(config).not.toBeNull();
     expect(config?.tier).toBe('A');
     expect(config?.paymentMode).toBe('CREDIT');
-    expect(config?.markupPct.toNumber()).toBe(10);
+    expect(config?.markupPct.toNumber()).toBe(getTierPreset('A')!.markupPct);
 
     // Verify initial agency user was created
     const user = await testPrisma.user.findFirst({
@@ -127,7 +128,7 @@ describe('Admin Direct Agency Creation Flow (D7 Exception)', () => {
     expect(updateRes.status).toBe(200);
     expect(updateRes.body.tier).toBe('B');
     expect(updateRes.body.paymentMode).toBe('CREDIT');
-    expect(updateRes.body.creditLimit).toBe('200000'); // Decimal returned as string
+    expect(updateRes.body.creditLimit).toBe(String(getTierPreset('B')!.creditLimit)); // Decimal returned as string
 
     // Verify in DB that it is active and the old one is disabled
     const config = await testPrisma.commercialConfiguration.findFirst({

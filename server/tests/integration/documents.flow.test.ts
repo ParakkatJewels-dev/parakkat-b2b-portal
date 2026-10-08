@@ -5,9 +5,12 @@ import { hashPassword } from '../../src/modules/auth/password.service';
 import { tokenFor } from '../setup/identity';
 import { loadSettings } from '../../src/modules/settings/settings.service';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
+import { weekdayStay } from '../setup/stayDates';
+
+const nearStay = weekdayStay(30);
 
 const app = createApp();
-const goa = { resortId: 'resort-goa', roomTypeId: 'goa-deluxe', checkIn: '2026-08-01', checkOut: '2026-08-03', guests: 2 };
+const goa = { resortId: 'resort-goa', roomTypeId: 'goa-deluxe', checkIn: nearStay.checkIn, checkOut: nearStay.checkOut, guests: 2 };
 
 // Read the response body as raw bytes so we can assert the %PDF magic header.
 function pdfParser(res: NodeJS.ReadableStream & { setEncoding: (e: string) => void }, cb: (err: Error | null, body: Buffer) => void) {

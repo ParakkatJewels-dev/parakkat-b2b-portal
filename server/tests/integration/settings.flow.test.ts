@@ -5,6 +5,9 @@ import { hashPassword } from '../../src/modules/auth/password.service';
 import { tokenFor } from '../setup/identity';
 import { loadSettings } from '../../src/modules/settings/settings.service';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
+import { weekdayStay } from '../setup/stayDates';
+
+const nearStay = weekdayStay(30);
 
 const app = createApp();
 const PASSWORD = 'Pass!23456';
@@ -121,7 +124,7 @@ describe('booking window enforcement', () => {
 
     await request(app).put('/api/settings/booking').set('Authorization', `Bearer ${adminToken}`).send({ bookingWindowDays: 3 });
 
-    const far = { resortId: 'resort-goa', roomTypeId: 'goa-deluxe', checkIn: '2026-09-01', checkOut: '2026-09-03', guests: 2 };
+    const far = { resortId: 'resort-goa', roomTypeId: 'goa-deluxe', checkIn: nearStay.checkIn, checkOut: nearStay.checkOut, guests: 2 };
     const res = await request(app).post('/api/bookings').set('Authorization', `Bearer ${agentToken}`).send(far);
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/3 days/);

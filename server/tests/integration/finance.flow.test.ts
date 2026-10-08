@@ -6,6 +6,10 @@ import { hashPassword } from '../../src/modules/auth/password.service';
 import { tokenFor } from '../setup/identity';
 import { signPaymentBody } from '../../src/lib/payments';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
+import { weekdayStay } from '../setup/stayDates';
+
+const nearStay = weekdayStay(30);
+const farStay = weekdayStay(60);
 
 const app = createApp();
 
@@ -52,8 +56,8 @@ async function setupAgency(opts: { paymentMode: PaymentMode; creditLimit: number
   return { agency, agentToken, agencyToken, adminToken };
 }
 
-const goa = { resortId: 'resort-goa', roomTypeId: 'goa-deluxe', checkIn: '2026-08-01', checkOut: '2026-08-03', guests: 2 };
-const goaFar = { ...goa, checkIn: '2026-12-01', checkOut: '2026-12-03' };
+const goa = { resortId: 'resort-goa', roomTypeId: 'goa-deluxe', checkIn: nearStay.checkIn, checkOut: nearStay.checkOut, guests: 2 };
+const goaFar = { ...goa, checkIn: farStay.checkIn, checkOut: farStay.checkOut };
 
 beforeEach(async () => {
   await resetDatabase();

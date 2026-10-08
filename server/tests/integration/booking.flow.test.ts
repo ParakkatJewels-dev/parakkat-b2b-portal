@@ -6,6 +6,9 @@ import { getInventoryClient } from '../../src/lib/inventory';
 import { hashPassword } from '../../src/modules/auth/password.service';
 import { tokenFor } from '../setup/identity';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
+import { weekdayStay } from '../setup/stayDates';
+
+const nearStay = weekdayStay(30);
 
 const app = createApp();
 
@@ -47,7 +50,7 @@ async function setupAgency(opts: { paymentMode: PaymentMode; creditLimit: number
   return { agency, agent, token };
 }
 
-const goaDeluxe = { resortId: 'resort-goa', roomTypeId: 'goa-deluxe', checkIn: '2026-08-01', checkOut: '2026-08-03', guests: 2 };
+const goaDeluxe = { resortId: 'resort-goa', roomTypeId: 'goa-deluxe', checkIn: nearStay.checkIn, checkOut: nearStay.checkOut, guests: 2 };
 
 beforeEach(async () => {
   await resetDatabase();
@@ -64,7 +67,7 @@ describe('catalog search', () => {
     const { token } = await setupAgency({ paymentMode: 'CREDIT', creditLimit: 50000, markupPct: 10 });
     const res = await request(app)
       .get('/api/catalog/availability')
-      .query({ resortId: 'resort-goa', checkIn: '2026-08-01', checkOut: '2026-08-03', guests: 2 })
+      .query({ resortId: 'resort-goa', checkIn: nearStay.checkIn, checkOut: nearStay.checkOut, guests: 2 })
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     const deluxe = res.body.roomTypes.find((r: { roomTypeId: string }) => r.roomTypeId === 'goa-deluxe');
@@ -81,7 +84,7 @@ describe('credit gate branches', () => {
     expect(res.status).toBe(201);
     expect(res.body.state).toBe('COMMITTED');
     expect(res.body.paymentMode).toBe('CREDIT');
-    expect(res.body.crsBookingRef).toMatch(/^AXR-/);
+    expect(res.body.crsBookingRef).toMatch(/^RSV-/);
     expect(res.body.agencyPrice).toBe('9900');
   });
 
@@ -99,7 +102,7 @@ describe('credit gate branches', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(paid.status).toBe(200);
     expect(paid.body.state).toBe('COMMITTED');
-    expect(paid.body.crsBookingRef).toMatch(/^AXR-/);
+    expect(paid.body.crsBookingRef).toMatch(/^RSV-/);
   });
 
   it('credit agency over its limit takes the pay-first branch (D3)', async () => {
@@ -177,7 +180,7 @@ describe('tenant isolation + gating', () => {
 });
 
 describe('overbooking and group booking limits', () => {
-  const munnarVilla = { resortId: 'resort-munnar', roomTypeId: 'munnar-villa', checkIn: '2026-08-01', checkOut: '2026-08-03', guests: 2 };
+  const munnarVilla = { resortId: 'resort-munnar', roomTypeId: 'munnar-villa', checkIn: nearStay.checkIn, checkOut: nearStay.checkOut, guests: 2 };
 
   it('rejects group bookings where the total rooms of a type exceeds availability (only 1 villa available)', async () => {
     const { token } = await setupAgency({ paymentMode: 'CREDIT', creditLimit: 100000, markupPct: 10 });
