@@ -49,9 +49,13 @@ export async function createAgency(
   }
   const terms = resolveCommercialTerms(preset);
 
-  // The agency user's Auth login is created inside the transaction below; if anything after it
-  // fails, the database rolls back and the login is removed here, so nothing is left half-made.
-  let newLoginId: string | undefined;
+  // The agency user's Auth login is created before the transaction (a network call must not eat
+  // into its time limit). If the transaction then fails, the login is removed again below.
+  const agencyUserEmail = input.contactEmail;
+  const existingUser = await prisma.user.findUnique({ where: { email: agencyUserEmail }, select: { id: true } });
+  const tempPassword = existingUser ? '' : generateStrongPassword(14);
+  const login = existingUser ? null : await getIdentity().createUser({ email: agencyUserEmail, password: tempPassword });
+
   const { agency, temporaryPassword } = await prisma.$transaction(async (tx) => {
     // 1. Create the dummy/linked AgencyApplication record
     const app = await tx.agencyApplication.create({
@@ -141,13 +145,7 @@ export async function createAgency(
     }
 
     // 5. Create the initial agency user (role = AGENCY)
-    const agencyUserEmail = createdAgency.contactEmail;
-    const existing = await tx.user.findUnique({ where: { email: agencyUserEmail } });
-    let tempPassword = '';
-    if (!existing) {
-      tempPassword = generateStrongPassword(14);
-      const login = await getIdentity().createUser({ email: agencyUserEmail, password: tempPassword });
-      newLoginId = login.id;
+    if (login) {
       const user = await tx.user.create({
         data: {
           id: login.id,
@@ -180,9 +178,9 @@ export async function createAgency(
 
     return { agency: createdAgency, temporaryPassword: tempPassword || undefined };
   }).catch(async (error: unknown) => {
-    if (newLoginId) {
-      await getIdentity().deleteUser(newLoginId).catch((cleanupError: unknown) =>
-        logger.error('Could not remove the login of an agency that failed to save', { userId: newLoginId, cleanupError }),
+    if (login) {
+      await getIdentity().deleteUser(login.id).catch((cleanupError: unknown) =>
+        logger.error('Could not remove the login of an agency that failed to save', { userId: login.id, cleanupError }),
       );
     }
     throw error;
@@ -226,7 +224,13 @@ export async function deleteAgency(agencyId: string, actor: Actor) {
     // commercialConfigurations cascade on agency delete.
     await tx.agency.delete({ where: { id: agencyId } });
   });
-  for (const user of users) await getIdentity().deleteUser(user.id);
+  // Best effort, one by one: a login left behind grants nothing (sign-in needs a portal user) and
+  // is logged for cleanup; it must not stop the rest or the audit entry.
+  for (const user of users) {
+    await getIdentity().deleteUser(user.id).catch((error: unknown) =>
+      logger.error('Could not remove the login of a deleted agency user', { userId: user.id, agencyId, error }),
+    );
+  }
   await recordAuditLogSafe({
     entityType: 'Agency',
     entityId: agencyId,

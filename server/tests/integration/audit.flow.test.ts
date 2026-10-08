@@ -59,7 +59,7 @@ describe('audit trail', () => {
     await request(app)
       .post('/api/auth/mfa/setup/totp/confirm')
       .set('Authorization', `Bearer ${pendingToken}`)
-      .send({ code });
+      .send({ code, factorId: setupRes.body.factorId });
 
     expect(await eventsFor(user.id)).toContain('MFA_ENABLED');
     await resetMfaPolicy();

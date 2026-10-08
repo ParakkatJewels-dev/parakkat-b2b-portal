@@ -249,6 +249,10 @@ const data = parsed.data;
 if (data.NODE_ENV === 'production') {
   const productionErrors: string[] = [];
   if (!data.CRON_SECRET) productionErrors.push('CRON_SECRET is required in production');
+  if (data.IDENTITY_PROVIDER === 'mock' && data.IDENTITY_MOCK_JWT_SECRET === 'local-identity-mock-secret-not-for-production') {
+    // The default is published in this repository: anyone could sign tokens with it.
+    productionErrors.push('IDENTITY_MOCK_JWT_SECRET must be set to a private value when the mock identity provider runs in production');
+  }
   if (data.IDENTITY_PROVIDER === 'supabase') {
     if (!data.SUPABASE_URL) productionErrors.push('SUPABASE_URL is required when IDENTITY_PROVIDER=supabase');
     if (!data.SUPABASE_SERVICE_ROLE_KEY)

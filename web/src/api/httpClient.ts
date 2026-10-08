@@ -45,7 +45,7 @@ httpClient.interceptors.response.use(
     const config = error.config as RetriableConfig | undefined;
     // A 401 from these is the answer itself (wrong password, wrong code, expired login), not an
     // expired access token — refreshing and retrying would only repeat the failed attempt.
-    const isAuthEndpoint = ['/auth/login', '/auth/refresh', '/auth/mfa/'].some((path) => config?.url?.includes(path));
+    const isAuthEndpoint = ['/auth/login', '/auth/refresh', '/auth/mfa/verify'].some((path) => config?.url?.includes(path));
 
     if (error.response?.status === 401 && config && !config._retried && !isAuthEndpoint) {
       config._retried = true;

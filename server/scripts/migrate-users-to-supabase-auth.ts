@@ -11,9 +11,9 @@
  * the password they have today. The local hash is then cleared — the credential lives only in
  * Supabase Auth from here on (pass --keep-hashes to leave it).
  *
- * Authenticator-app secrets cannot be imported, so TOTP users are switched back to "no MFA";
- * where MFA is mandatory they are asked to enrol again at their next sign-in. Email-code MFA
- * users are unaffected.
+ * Authenticator-app secrets cannot be imported, so TOTP users keep a second factor by switching to
+ * emailed codes (to the mailbox they already own); they can enrol an authenticator again from
+ * their profile once signed in. Email-code MFA users are unaffected.
  *
  * Safe to re-run: users that already have their Auth account are skipped.
  */
@@ -58,7 +58,7 @@ async function main() {
       continue;
     }
     const resetsTotp = user.mfaEnabled && user.mfaMethod === 'TOTP';
-    console.log(`  create  ${label}${resetsTotp ? ' — authenticator app must be enrolled again' : ''}`);
+    console.log(`  create  ${label}${resetsTotp ? ' — authenticator app → emailed codes until re-enrolled' : ''}`);
     if (!apply) continue;
 
     const { error } = await admin.createUser({
@@ -76,7 +76,7 @@ async function main() {
       where: { id: user.id },
       data: {
         ...(keepHashes ? {} : { passwordHash: null }),
-        ...(resetsTotp ? { mfaEnabled: false, mfaMethod: 'NONE', mfaSecret: null } : {}),
+        ...(resetsTotp ? { mfaMethod: 'EMAIL', mfaSecret: null } : {}),
       },
     });
     created++;

@@ -73,7 +73,8 @@ export interface IdentityProvider {
   /** Verifies signature, expiry, issuer and audience. Null for anything untrustworthy. */
   verifyAccessToken(token: string): Promise<AccessClaims | null>;
 
-  isSessionActive(sessionId: string): Promise<boolean>;
+  /** The session exists, is not expired, and belongs to `userId`. */
+  isSessionActive(sessionId: string, userId: string): Promise<boolean>;
   revokeSession(sessionId: string): Promise<boolean>;
   /** Ends every session of a user, optionally keeping the caller's own. Returns the count. */
   revokeUserSessions(userId: string, options?: { exceptSessionId?: string }): Promise<number>;

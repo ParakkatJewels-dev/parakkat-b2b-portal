@@ -1,12 +1,30 @@
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { authenticate, authenticateOrMfaPending } from '../../../middleware/auth';
 import { authLimiter } from '../../../middleware/rateLimit';
 import { validate } from '../../../middleware/validate';
+import { prisma } from '../../../lib/prisma';
+import { ApiError } from '../../../utils/apiError';
 import { asyncHandler } from '../../../utils/asyncHandler';
+import { isMfaRequiredForRole } from '../auth.service';
 import * as mfaController from './mfa.controller';
-import { otpCodeSchema } from './mfa.schema';
+import { otpCodeSchema, totpConfirmSchema } from './mfa.schema';
 
 export const mfaRouter = Router();
+
+/**
+ * Who may enrol a second factor: a session that has passed its current one, an account that has
+ * none yet (first sign-in under a mandatory policy), or one where MFA is not in force. A session
+ * that still owes an EXISTING factor may not — confirming a newly enrolled one would complete the
+ * login without the factor the account actually has.
+ */
+const enrolmentAllowed = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
+  if (req.user!.mfaVerified) return next();
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id }, select: { role: true, mfaEnabled: true } });
+  if (user.mfaEnabled && isMfaRequiredForRole(user.role, true)) {
+    throw ApiError.forbidden('Finish signing in with your current second factor before changing it.');
+  }
+  next();
+});
 
 /**
  * @openapi
@@ -19,7 +37,7 @@ export const mfaRouter = Router();
  *       200:
  *         description: otpauth URL + QR code data URL
  */
-mfaRouter.post('/setup/totp', authenticateOrMfaPending, asyncHandler(mfaController.setupTotp));
+mfaRouter.post('/setup/totp', authenticateOrMfaPending, enrolmentAllowed, asyncHandler(mfaController.setupTotp));
 
 /**
  * @openapi
@@ -32,8 +50,9 @@ mfaRouter.post('/setup/totp', authenticateOrMfaPending, asyncHandler(mfaControll
 mfaRouter.post(
   '/setup/totp/confirm',
   authenticateOrMfaPending,
+  enrolmentAllowed,
   authLimiter,
-  validate({ body: otpCodeSchema }),
+  validate({ body: totpConfirmSchema }),
   asyncHandler(mfaController.confirmTotp),
 );
 
@@ -48,6 +67,7 @@ mfaRouter.post(
 mfaRouter.post(
   '/setup/email/request',
   authenticateOrMfaPending,
+  enrolmentAllowed,
   authLimiter,
   asyncHandler(mfaController.requestEmailSetup),
 );
@@ -63,6 +83,7 @@ mfaRouter.post(
 mfaRouter.post(
   '/setup/email/confirm',
   authenticateOrMfaPending,
+  enrolmentAllowed,
   authLimiter,
   validate({ body: otpCodeSchema }),
   asyncHandler(mfaController.confirmEmailSetup),

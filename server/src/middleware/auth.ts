@@ -29,7 +29,7 @@ async function resolveCaller(req: Request, allowPendingMfa: boolean): Promise<vo
       where: { id: claims.userId },
       select: { id: true, role: true, agencyId: true, status: true, mfaEnabled: true },
     }),
-    identity.isSessionActive(claims.sessionId),
+    identity.isSessionActive(claims.sessionId, claims.userId),
     prisma.mfaSession.findUnique({ where: { sessionId: claims.sessionId }, select: { userId: true } }),
   ]);
   if (!user || !sessionActive) throw ApiError.unauthorized('Invalid or expired token');

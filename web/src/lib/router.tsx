@@ -29,6 +29,11 @@ interface NavigateOptions {
 // own state while the next one loads; react-router behaved the same way.
 const navigationState = new Map<string, unknown>();
 
+/** Forget all carried navigation state — on sign-out, so nothing outlives the session. */
+export function clearNavigationState(): void {
+  navigationState.clear();
+}
+
 function rememberState(to: To, state: unknown): void {
   const pathname = pathOf(to);
   if (state === undefined) navigationState.delete(pathname);

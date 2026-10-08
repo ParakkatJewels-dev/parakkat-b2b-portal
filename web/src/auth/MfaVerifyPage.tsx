@@ -88,6 +88,7 @@ export function MfaSetupPage() {
   const state = location.state as SetupLocationState | undefined;
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [manualKey, setManualKey] = useState<string | null>(null);
+  const [factorId, setFactorId] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -100,17 +101,18 @@ export function MfaSetupPage() {
     authApi.setupTotp(state.mfaPendingToken).then((res) => {
       setQrCodeDataUrl(res.qrCodeDataUrl);
       setManualKey(res.manualEntryKey);
+      setFactorId(res.factorId);
     });
   }, [state, navigate]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!state) return;
+    if (!state || !factorId) return;
     setError(null);
     setSubmitting(true);
     try {
       // Confirming the enrolment completes this login too: the session comes back upgraded.
-      const { accessToken } = await authApi.confirmTotp(state.mfaPendingToken, code);
+      const { accessToken } = await authApi.confirmTotp(state.mfaPendingToken, code, factorId);
       setSession(accessToken, await authApi.getMeWithToken(accessToken));
       navigate('/');
     } catch {

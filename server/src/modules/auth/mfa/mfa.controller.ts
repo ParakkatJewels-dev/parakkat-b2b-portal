@@ -20,7 +20,8 @@ export async function setupTotp(req: Request, res: Response): Promise<void> {
  * first-login enrolment also completes that login.
  */
 export async function confirmTotp(req: Request, res: Response): Promise<void> {
-  const session = await getIdentity().verifyTotp(req.user!.accessToken!, req.body.code);
+  // The factor just enrolled — never an older one the account may already have.
+  const session = await getIdentity().verifyTotp(req.user!.accessToken!, req.body.code, req.body.factorId);
   if (!session) {
     throw ApiError.badRequest('Invalid TOTP code');
   }
@@ -35,7 +36,7 @@ export async function confirmTotp(req: Request, res: Response): Promise<void> {
     );
     return updated;
   });
-  completeMfaSession(req, res, session);
+  completeMfaSession(req, res, req.user!.sessionId, session);
   res.status(200).json({ mfaEnabled: true, mfaMethod: 'TOTP', accessToken: session.accessToken, userId: user.id });
 }
 
@@ -49,7 +50,7 @@ export async function requestEmailSetup(req: Request, res: Response): Promise<vo
 export async function confirmEmailSetup(req: Request, res: Response): Promise<void> {
   await mfaService.confirmEmailOtpSetup(req.user!.id, req.body.code);
   if (req.user!.sessionId) await recordEmailMfa(req.user!.sessionId, req.user!.id);
-  completeMfaSession(req, res);
+  completeMfaSession(req, res, req.user!.sessionId);
   res.status(200).json({ mfaEnabled: true, mfaMethod: 'EMAIL' });
 }
 

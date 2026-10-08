@@ -1,3 +1,4 @@
+import { authenticator } from 'otplib';
 import request from 'supertest';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app';
@@ -187,5 +188,118 @@ describe('security console', () => {
       .set('Authorization', `Bearer ${adminSession.token}`);
     expect(revoked.status).toBe(200);
     expect((await me(session.token)).status).toBe(401);
+  });
+});
+
+describe('second-factor hardening', () => {
+  beforeEach(enforceStaffMfa);
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await resetMfaPolicy();
+  });
+
+  const captureMail = () => {
+    const sent: string[] = [];
+    vi.spyOn(getMailer(), 'send').mockImplementation(async (mail) => {
+      sent.push(mail.text ?? '');
+    });
+    return () => /(\d{6})/.exec(sent.at(-1) ?? '')![1];
+  };
+
+  it('a password-only session of an enrolled account cannot enrol a new factor to skip its own', async () => {
+    const user = await testPrisma.user.create({
+      data: { email: 'enrolled@example.com', passwordHash: await hashPassword(PASSWORD), role: 'ADMIN', mfaEnabled: true, mfaMethod: 'EMAIL' },
+    });
+    captureMail();
+    const pending = await login(user.email);
+    expect(pending.body.mfaRequired).toBe(true);
+    const bearer = `Bearer ${pending.body.mfaPendingToken}`;
+
+    expect((await request(app).post('/api/auth/mfa/setup/totp').set('Authorization', bearer)).status).toBe(403);
+    expect((await request(app).post('/api/auth/mfa/setup/totp/confirm').set('Authorization', bearer)
+      .send({ code: '123456', factorId: '00000000-0000-4000-8000-000000000000' })).status).toBe(403);
+    expect((await request(app).post('/api/auth/mfa/setup/email/request').set('Authorization', bearer)).status).toBe(403);
+    expect((await request(app).post('/api/auth/mfa/setup/email/confirm').set('Authorization', bearer).send({ code: '123456' })).status).toBe(403);
+    expect((await me(pending.body.mfaPendingToken)).status).toBe(401);
+  });
+
+  it('a TOTP account whose authenticator is not registered signs in with an emailed code instead', async () => {
+    const user = await testPrisma.user.create({
+      data: { email: 'moved@example.com', passwordHash: await hashPassword(PASSWORD), role: 'ADMIN', mfaEnabled: true, mfaMethod: 'TOTP' },
+    });
+    const lastCode = captureMail();
+    const pending = await login(user.email);
+    expect(pending.body.mfaRequired).toBe(true);
+    expect(pending.body.mfaMethod).toBe('EMAIL');
+    const verified = await request(app).post('/api/auth/mfa/verify')
+      .send({ mfaPendingToken: pending.body.mfaPendingToken, code: lastCode() });
+    expect(verified.status).toBe(200);
+    expect((await me(verified.body.accessToken)).status).toBe(200);
+  });
+
+  it('a login that still owes MFA cannot be extended through /auth/refresh, even outside a browser', async () => {
+    const user = await testPrisma.user.create({
+      data: { email: 'pending@example.com', passwordHash: await hashPassword(PASSWORD), role: 'ADMIN', mfaEnabled: true, mfaMethod: 'EMAIL' },
+    });
+    captureMail();
+    const pending = await login(user.email);
+    const parked = pending.cookies.find((c) => c.startsWith('mfaPendingRefreshToken='))!;
+    const rawToken = decodeURIComponent(parked.split(';')[0].split('=')[1]).split('.').slice(1).join('.');
+    const refreshed = await request(app).post('/api/auth/refresh').set('Cookie', `refreshToken=${rawToken}`);
+    expect(refreshed.status).toBe(401);
+  });
+
+  it('completing MFA promotes only the parked token of that same login', async () => {
+    const [a, b] = await Promise.all(['a', 'b'].map(async (n) => testPrisma.user.create({
+      data: { email: `${n}@example.com`, passwordHash: await hashPassword(PASSWORD), role: 'ADMIN', mfaEnabled: true, mfaMethod: 'EMAIL' },
+    })));
+    const lastCode = captureMail();
+    const pendingA = await login(a.email);
+    const codeA = lastCode();
+    const pendingB = await login(b.email); // same browser: B's parked cookie replaced A's
+    const verifiedA = await request(app).post('/api/auth/mfa/verify')
+      .set('Cookie', pendingB.cookies)
+      .send({ mfaPendingToken: pendingA.body.mfaPendingToken, code: codeA });
+    expect(verifiedA.status).toBe(200);
+    const setCookies = (verifiedA.headers['set-cookie'] as unknown as string[]) ?? [];
+    expect(setCookies.some((c) => c.startsWith('refreshToken=') && !c.startsWith('refreshToken=;'))).toBe(false);
+  });
+
+  it('a signed-in TOTP user can move to a new authenticator, confirmed by the new one', async () => {
+    const admin = await testPrisma.user.create({
+      data: { email: 'mover@example.com', passwordHash: await hashPassword(PASSWORD), role: 'ADMIN' },
+    });
+    const first = await login(admin.email);
+    const pendingBearer = `Bearer ${first.body.mfaPendingToken}`;
+    const oldSetup = await request(app).post('/api/auth/mfa/setup/totp').set('Authorization', pendingBearer);
+    const oldSecret = oldSetup.body.manualEntryKey as string;
+    const enrolled = await request(app).post('/api/auth/mfa/setup/totp/confirm').set('Authorization', pendingBearer)
+      .send({ code: authenticator.generate(oldSecret), factorId: oldSetup.body.factorId });
+    expect(enrolled.status).toBe(200);
+
+    const signedIn = `Bearer ${enrolled.body.accessToken}`;
+    const newSetup = await request(app).post('/api/auth/mfa/setup/totp').set('Authorization', signedIn);
+    expect(newSetup.status).toBe(200);
+    const newSecret = newSetup.body.manualEntryKey as string;
+    const wrongDevice = await request(app).post('/api/auth/mfa/setup/totp/confirm').set('Authorization', signedIn)
+      .send({ code: authenticator.generate(oldSecret), factorId: newSetup.body.factorId });
+    expect(wrongDevice.status).toBe(400);
+    const moved = await request(app).post('/api/auth/mfa/setup/totp/confirm').set('Authorization', signedIn)
+      .send({ code: authenticator.generate(newSecret), factorId: newSetup.body.factorId });
+    expect(moved.status).toBe(200);
+  });
+});
+
+describe('security console shows the browser, not the API', () => {
+  it('records the signing-in browser for each session', async () => {
+    const { owner } = await agencyWithUser();
+    await request(app).post('/api/auth/login').set('User-Agent', 'PortalTestBrowser/1.0').send({ email: owner.email, password: PASSWORD });
+    const admin = await testPrisma.user.create({
+      data: { email: 'console@example.com', passwordHash: await hashPassword(PASSWORD), role: 'ADMIN' },
+    });
+    const adminSession = await login(admin.email);
+    const list = await request(app).get('/api/security/sessions').set('Authorization', `Bearer ${adminSession.token}`);
+    const row = (list.body.items as Array<{ email: string; userAgent: string | null }>).find((s) => s.email === owner.email);
+    expect(row?.userAgent).toBe('PortalTestBrowser/1.0');
   });
 });

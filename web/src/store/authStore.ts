@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { AuthUser } from '../types/auth';
+import { clearNavigationState } from '../lib/router';
 
 interface AuthState {
   // Access token lives in memory only — never localStorage/sessionStorage,
@@ -27,6 +28,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   setAccessToken: (accessToken) => set({ accessToken }),
   clearSession: () => {
     localStorage.removeItem(SESSION_HINT_KEY);
+    clearNavigationState(); // e.g. a pending MFA token carried to /mfa/*
     set({ accessToken: null, user: null });
   },
 }));

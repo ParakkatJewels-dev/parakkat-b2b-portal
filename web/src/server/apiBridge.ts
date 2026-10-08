@@ -33,8 +33,20 @@ function expressApp(): Promise<RequestListener> {
   return app;
 }
 
-/** The caller's address as the hosting edge saw it; Express uses it for per-IP rate limits. */
+/**
+ * Forwarding headers are only as trustworthy as the proxy in front of this app. Vercel's edge
+ * overwrites them with the real client address; a bare `next start` passes on whatever the client
+ * sent. Set TRUST_PROXY_HEADERS=true when self-hosting behind a proxy that overwrites them.
+ */
+const TRUST_FORWARDING_HEADERS = process.env.VERCEL === '1' || process.env.TRUST_PROXY_HEADERS === 'true';
+
+/**
+ * The caller's address, used by Express for per-IP rate limits and the session console. Without a
+ * trusted proxy every request shares one address: the limits stay in force (coarser) rather than
+ * being sidestepped by a forged header.
+ */
 function clientAddress(request: Request): string {
+  if (!TRUST_FORWARDING_HEADERS) return '127.0.0.1';
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
   return forwarded || request.headers.get('x-real-ip') || '127.0.0.1';
 }

@@ -6,21 +6,27 @@ import { getMfaPolicy } from '../settings/settings.service';
 /** Live Supabase Auth sessions of portal users, most recently active first. */
 export async function listActiveSessions() {
   const sessions = await getIdentity().listSessions(200);
-  const users = await prisma.user.findMany({
-    where: { id: { in: [...new Set(sessions.map((s) => s.userId))] } },
-    select: { id: true, email: true, name: true, role: true },
-  });
+  const [users, infos] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: [...new Set(sessions.map((s) => s.userId))] } },
+      select: { id: true, email: true, name: true, role: true },
+    }),
+    // The browser's address and agent, recorded at sign-in (Supabase only saw the API's).
+    prisma.authSessionInfo.findMany({ where: { sessionId: { in: sessions.map((s) => s.id) } } }),
+  ]);
   const byId = new Map(users.map((u) => [u.id, u]));
+  const infoBySession = new Map(infos.map((i) => [i.sessionId, i]));
   return sessions.flatMap((s) => {
     const user = byId.get(s.userId);
     if (!user) return []; // an Auth account the portal does not know grants nothing; not listed
+    const info = infoBySession.get(s.id);
     return [{
       id: s.id,
       user: user.name ?? user.email,
       email: user.email,
       role: user.role,
-      ip: s.ip,
-      userAgent: s.userAgent,
+      ip: info?.ip ?? s.ip,
+      userAgent: info?.userAgent ?? s.userAgent,
       createdAt: s.createdAt,
       lastActiveAt: s.refreshedAt ?? s.createdAt,
     }];

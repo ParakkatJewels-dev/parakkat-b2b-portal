@@ -48,7 +48,7 @@ export function MfaCard() {
     setBusy(true); setError(null);
     try {
       if (mode === 'totp') {
-        const { accessToken: upgraded } = await mfaApi.confirmTotp(code);
+        const { accessToken: upgraded } = await mfaApi.confirmTotp(code, setup!.factorId);
         useAuthStore.getState().setAccessToken(upgraded);
       } else {
         await mfaApi.confirmEmailOtp(code);

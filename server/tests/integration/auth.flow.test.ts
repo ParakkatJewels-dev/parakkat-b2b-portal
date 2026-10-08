@@ -89,7 +89,7 @@ describe('auth flow — role with mandatory MFA (ADMIN), first login', () => {
     const confirmRes = await request(app)
       .post('/api/auth/mfa/setup/totp/confirm')
       .set('Authorization', `Bearer ${pendingToken}`)
-      .send({ code });
+      .send({ code, factorId: setupRes.body.factorId });
     expect(confirmRes.status).toBe(200);
     expect(confirmRes.body.mfaEnabled).toBe(true);
 
@@ -129,7 +129,7 @@ describe('auth flow — role with mandatory MFA (ADMIN), first login', () => {
     await request(app)
       .post('/api/auth/mfa/setup/totp/confirm')
       .set('Authorization', `Bearer ${pendingToken}`)
-      .send({ code });
+      .send({ code, factorId: setupRes.body.factorId });
 
     const secondLogin = await request(app).post('/api/auth/login').send({ email: user.email, password });
     const verifyRes = await request(app)

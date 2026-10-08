@@ -16,7 +16,7 @@ export async function verifyMfa(
 
 export async function setupTotp(
   mfaPendingTokenOrAccessToken: string,
-): Promise<{ otpauthUrl: string; qrCodeDataUrl: string; manualEntryKey: string }> {
+): Promise<{ factorId: string; otpauthUrl: string; qrCodeDataUrl: string; manualEntryKey: string }> {
   const res = await httpClient.post(
     '/auth/mfa/setup/totp',
     {},
@@ -32,10 +32,11 @@ export async function setupTotp(
 export async function confirmTotp(
   mfaPendingTokenOrAccessToken: string,
   code: string,
+  factorId: string,
 ): Promise<{ mfaEnabled: boolean; mfaMethod: string; accessToken: string }> {
   const res = await httpClient.post(
     '/auth/mfa/setup/totp/confirm',
-    { code },
+    { code, factorId },
     { headers: { Authorization: `Bearer ${mfaPendingTokenOrAccessToken}` } },
   );
   return res.data;

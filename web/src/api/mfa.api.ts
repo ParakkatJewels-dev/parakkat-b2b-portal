@@ -8,6 +8,8 @@ import { httpClient } from './httpClient';
  */
 
 export interface TotpSetup {
+  /** The enrolment to confirm — sent back with the code. */
+  factorId: string;
   otpauthUrl: string;
   qrCodeDataUrl: string;
   manualEntryKey: string;
@@ -18,8 +20,8 @@ export async function startTotp(): Promise<TotpSetup> {
 }
 
 /** Confirms enrolment; the session is upgraded and its tokens rotated (new access token returned). */
-export async function confirmTotp(code: string): Promise<{ mfaEnabled: boolean; mfaMethod: string; accessToken: string }> {
-  return (await httpClient.post('/auth/mfa/setup/totp/confirm', { code })).data;
+export async function confirmTotp(code: string, factorId: string): Promise<{ mfaEnabled: boolean; mfaMethod: string; accessToken: string }> {
+  return (await httpClient.post('/auth/mfa/setup/totp/confirm', { code, factorId })).data;
 }
 
 export async function requestEmailOtp(): Promise<{ sent: boolean }> {

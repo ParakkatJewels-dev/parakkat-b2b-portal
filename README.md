@@ -118,6 +118,12 @@ npm start         # production build of the single app: screens + API in one Nex
   secrets, `APP_BASE_URL`, `CRON_SECRET`, and the Supabase storage credentials. Use
   `STORAGE_PROVIDER=supabase`; Vercel Functions do not provide persistent local file storage. The
   old `JWT_*`, `ACCESS_TOKEN_TTL`, `MFA_PENDING_TOKEN_TTL` and `MFA_ENCRYPTION_KEY` are no longer read.
+- Supabase Auth rate-limits by IP, and every sign-in, refresh and MFA check now reaches it from the
+  app's servers. In Supabase → Authentication → Rate Limits, raise the token-refresh, sign-in and
+  verification limits to cover all portal users together (roughly one refresh per active user per
+  hour). The portal still applies its own per-browser limits.
+- Self-hosting instead of Vercel: set `TRUST_PROXY_HEADERS=true` only behind a proxy that overwrites
+  `X-Forwarded-For`; otherwise all clients share one rate-limit bucket.
 - For live updates, set `REALTIME_ENABLED=true`, `REALTIME_CHANNEL_SECRET`,
   `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (the old `VITE_*` names are
   still read). The service-role key remains server-only.

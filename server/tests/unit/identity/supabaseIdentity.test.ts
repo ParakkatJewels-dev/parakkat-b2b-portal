@@ -61,7 +61,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+// As Supabase Auth answers supabase-js (which sends X-Supabase-Api-Version): error codes are only
+// read from the body when the response carries the version header.
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { 'Content-Type': 'application/json', 'X-Supabase-Api-Version': '2024-01-01' },
+});
 
 describe('SupabaseIdentity grants', () => {
   it('signs in with the password grant and maps the session', async () => {
@@ -133,6 +138,23 @@ describe('SupabaseIdentity sessions and users', () => {
     expect(values).toEqual(['user-1', 'keep-me', 'keep-me']);
   });
 
+  it('a session counts only for the user it belongs to', async () => {
+    queryRaw.mockResolvedValueOnce([{ active: true }]);
+    await expect(new SupabaseIdentity().isSessionActive('session-1', USER)).resolves.toBe(true);
+    const [strings, ...values] = queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+    expect(strings.join('?')).toMatch(/id = \?::uuid and user_id = \?::uuid/);
+    expect(values).toEqual(['session-1', USER]);
+  });
+
+  it('maps Supabase error codes, not bare statuses: a weak password is the caller\'s mistake', async () => {
+    respond = () => json({ code: 'weak_password', message: 'Password should be at least 12 characters' }, 422);
+    await expect(new SupabaseIdentity().createUser({ email: 'n@example.com', password: 'short' }))
+      .rejects.toMatchObject({ statusCode: 400, message: 'Password should be at least 12 characters' });
+    respond = () => json({ code: 'unexpected_failure', message: 'boom' }, 422);
+    await expect(new SupabaseIdentity().createUser({ email: 'n@example.com', password: 'Long!Enough123' }))
+      .rejects.toMatchObject({ statusCode: 503 });
+  });
+
   it('creates confirmed logins through the admin API and maps a duplicate email to a conflict', async () => {
     respond = (url) => url.endsWith('/admin/users') ? json({ id: 'new-user', email: 'n@example.com' }) : json({}, 404);
     await expect(new SupabaseIdentity().createUser({ email: 'n@example.com', password: 'Temp!Pass123' }))
@@ -140,7 +162,7 @@ describe('SupabaseIdentity sessions and users', () => {
     const body = JSON.parse(String(calls[0].init.body));
     expect(body).toMatchObject({ email: 'n@example.com', password: 'Temp!Pass123', email_confirm: true });
 
-    respond = () => json({ code: 'email_exists', msg: 'A user with this email address has already been registered' }, 422);
+    respond = () => json({ code: 'email_exists', message: 'A user with this email address has already been registered' }, 422);
     await expect(new SupabaseIdentity().createUser({ email: 'n@example.com', password: 'x' })).rejects.toMatchObject({ statusCode: 409 });
   });
 });

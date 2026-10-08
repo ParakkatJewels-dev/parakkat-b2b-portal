@@ -32,7 +32,9 @@ const PENDING_COOKIE_NAME = 'mfaPendingRefreshToken';
 const PENDING_COOKIE_PATH = '/api/auth/mfa';
 
 function setPendingSessionCookie(res: Response, session: IdentitySession): void {
-  res.cookie(PENDING_COOKIE_NAME, session.refreshToken, {
+  // Tagged with its session id, so only the login that passes MFA can promote it (another login
+  // started in the same browser would have replaced it).
+  res.cookie(PENDING_COOKIE_NAME, `${session.sessionId}.${session.refreshToken}`, {
     httpOnly: true,
     secure: env.NODE_ENV === 'production',
     sameSite: 'strict' as const,
@@ -42,11 +44,22 @@ function setPendingSessionCookie(res: Response, session: IdentitySession): void 
 }
 
 /**
- * The second factor is done: the session becomes a normal signed-in session. `session` is given
- * when the provider rotated the tokens (TOTP); otherwise the parked refresh token is promoted.
+ * Session `sessionId` has passed its second factor: it becomes a normal signed-in session.
+ * `session` is given when the provider rotated the tokens (TOTP); otherwise the parked refresh
+ * token is promoted — only if it belongs to that same session.
  */
-export function completeMfaSession(req: Request, res: Response, session?: IdentitySession | null): void {
-  const refreshToken = session?.refreshToken ?? req.cookies?.[PENDING_COOKIE_NAME];
+export function completeMfaSession(
+  req: Request,
+  res: Response,
+  sessionId: string | undefined,
+  session?: IdentitySession | null,
+): void {
+  let refreshToken = session?.refreshToken;
+  if (!refreshToken && sessionId) {
+    const parked = String(req.cookies?.[PENDING_COOKIE_NAME] ?? '');
+    const separator = parked.indexOf('.');
+    if (separator > 0 && parked.slice(0, separator) === sessionId) refreshToken = parked.slice(separator + 1);
+  }
   if (refreshToken) res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions());
   res.clearCookie(PENDING_COOKIE_NAME, { path: PENDING_COOKIE_PATH });
 }
@@ -88,7 +101,7 @@ export async function login(req: Request, res: Response): Promise<void> {
 
 export async function verifyMfa(req: Request, res: Response): Promise<void> {
   const result = await authService.verifyMfaAndLogin(req.body.mfaPendingToken, req.body.code);
-  completeMfaSession(req, res, result.session);
+  completeMfaSession(req, res, result.sessionId, result.session);
   res.status(200).json({ user: result.user, accessToken: result.accessToken });
 }
 

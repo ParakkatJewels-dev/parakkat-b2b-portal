@@ -90,8 +90,8 @@ export class MockIdentity implements IdentityProvider {
     }
   }
 
-  async isSessionActive(sessionId: string): Promise<boolean> {
-    return this.sessions.has(sessionId);
+  async isSessionActive(sessionId: string, userId: string): Promise<boolean> {
+    return this.sessions.get(sessionId)?.userId === userId;
   }
 
   async revokeSession(sessionId: string): Promise<boolean> {
@@ -209,7 +209,7 @@ export class MockIdentity implements IdentityProvider {
 
   private async requireClaims(accessToken: string): Promise<AccessClaims> {
     const claims = await this.verifyAccessToken(accessToken);
-    if (!claims || !(await this.isSessionActive(claims.sessionId))) {
+    if (!claims || !(await this.isSessionActive(claims.sessionId, claims.userId))) {
       throw ApiError.unauthorized('Invalid or expired token');
     }
     return claims;

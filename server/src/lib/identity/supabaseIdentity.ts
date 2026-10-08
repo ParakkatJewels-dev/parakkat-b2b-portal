@@ -73,6 +73,8 @@ export class SupabaseIdentity implements IdentityProvider {
     const res = await this.call('/token?grant_type=refresh_token', { body: { refresh_token: refreshToken } });
     if (res.status === 400 || res.status === 401 || res.status === 404) {
       // Refused. A token Supabase already rotated out (outside its short reuse window) is a replay.
+      // Best effort: only tokens Supabase stores in auth.refresh_tokens can be traced to a user;
+      // Supabase refuses replays either way.
       const rows = await prisma.$queryRaw<Array<{ user_id: string }>>`
         select user_id::text from auth.refresh_tokens where token = ${refreshToken} and revoked limit 1`;
       return rows[0] ? { status: 'reused', userId: rows[0].user_id } : { status: 'invalid' };
@@ -94,11 +96,12 @@ export class SupabaseIdentity implements IdentityProvider {
 
   // --- sessions -------------------------------------------------------------------------------
 
-  async isSessionActive(sessionId: string): Promise<boolean> {
+  async isSessionActive(sessionId: string, userId: string): Promise<boolean> {
     const rows = await prisma.$queryRaw<Array<{ active: boolean }>>`
       select exists(
         select 1 from auth.sessions
-         where id = ${sessionId}::uuid and (not_after is null or not_after > now())
+         where id = ${sessionId}::uuid and user_id = ${userId}::uuid
+           and (not_after is null or not_after > now())
       ) as active`;
     return Boolean(rows[0]?.active);
   }
@@ -144,7 +147,13 @@ export class SupabaseIdentity implements IdentityProvider {
       email_confirm: true,
     });
     if (error || !data.user) {
-      if (error?.status === 422) throw ApiError.conflict('A login with this email already exists');
+      if (error?.code === 'email_exists' || error?.code === 'user_already_exists') {
+        throw ApiError.conflict('A login with this email already exists');
+      }
+      if (error?.code === 'weak_password') throw ApiError.badRequest(error.message || 'The password is too weak');
+      if (error?.code === 'validation_failed' || error?.code === 'email_address_invalid') {
+        throw ApiError.badRequest(error.message || 'The email address is not valid');
+      }
       throw this.failure('create the login', error);
     }
     return { id: data.user.id, passwordHash: null };
@@ -152,6 +161,7 @@ export class SupabaseIdentity implements IdentityProvider {
 
   async setPassword(userId: string, password: string): Promise<void> {
     const { error } = await this.admin.auth.admin.updateUserById(userId, { password });
+    if (error?.code === 'weak_password') throw ApiError.badRequest(error.message || 'The password is too weak');
     if (error) throw this.failure('set the password', error);
   }
 
@@ -244,6 +254,8 @@ export class SupabaseIdentity implements IdentityProvider {
   private async expectOk<T>(res: Response, action: string): Promise<T> {
     if (res.ok) return (await res.json()) as T;
     if (res.status === 429) throw ApiError.tooManyRequests('Too many attempts. Please wait a moment and try again.');
+    // e.g. adding an authenticator from a session that has not passed the one it already has.
+    if (res.status === 403) throw ApiError.forbidden('This step needs your current second factor first.');
     const detail = await res.text().catch(() => '');
     throw this.failure(action, { status: res.status, message: detail.slice(0, 300) });
   }

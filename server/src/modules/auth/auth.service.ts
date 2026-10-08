@@ -78,6 +78,11 @@ export async function login(email: string, password: string, meta: RequestMeta):
     await identity.revokeSession(session.sessionId);
     throw ApiError.unauthorized('Invalid email or password');
   }
+  // Supabase records the API's address for the session (the API performs the grant); keep the
+  // browser's for the security console.
+  await prisma.authSessionInfo.create({
+    data: { sessionId: session.sessionId, userId: user.id, ip: meta.ip ?? null, userAgent: meta.userAgent ?? null },
+  });
 
   if (user.status === 'SUSPENDED') {
     await identity.revokeSession(session.sessionId);
@@ -94,28 +99,40 @@ export async function login(email: string, password: string, meta: RequestMeta):
   }
 
   const mfaRequired = isMfaRequiredForRole(user.role, user.mfaEnabled);
-  // A TOTP user whose authenticator is no longer registered with Supabase Auth (e.g. accounts
-  // moved over from the previous login system) enrols again rather than being locked out.
-  const factorReady = user.mfaMethod !== 'TOTP' || (await identity.hasVerifiedTotp(user.id));
 
-  if (mfaRequired && (!user.mfaEnabled || !factorReady)) {
+  // Only an account with no second factor yet may enrol one during sign-in; anyone holding just
+  // the password of an enrolled account must pass the factor it already has.
+  if (mfaRequired && !user.mfaEnabled) {
     await audit(user, 'LOGIN_MFA_SETUP_REQUIRED');
     return { status: 'mfa_setup_required', session };
   }
 
   if (mfaRequired) {
-    if (user.mfaMethod === 'EMAIL') await sendLoginEmailOtp(user.id, user.email);
+    const mfaMethod = await loginMfaMethod(user);
+    if (mfaMethod === 'EMAIL') await sendLoginEmailOtp(user.id, user.email);
     await audit(user, 'LOGIN_MFA_PENDING');
-    return { status: 'mfa_required', mfaMethod: user.mfaMethod as 'TOTP' | 'EMAIL', session };
+    return { status: 'mfa_required', mfaMethod, session };
   }
 
   await audit(user, 'LOGIN_SUCCESS');
   return { status: 'ok', user: toSafeUser(user), session };
 }
 
+/**
+ * The factor a login is checked with. An enrolled TOTP user whose authenticator is not registered
+ * with Supabase Auth (accounts moved from the previous login system, or a factor removed in the
+ * dashboard) proves it with a code to their own mailbox instead, and can enrol again afterwards
+ * from their profile — never by re-enrolling inside a password-only session.
+ */
+async function loginMfaMethod(user: Pick<User, 'id' | 'mfaMethod'>): Promise<'TOTP' | 'EMAIL'> {
+  return user.mfaMethod === 'TOTP' && (await getIdentity().hasVerifiedTotp(user.id)) ? 'TOTP' : 'EMAIL';
+}
+
 export interface MfaVerifyResult {
   user: SafeUser;
   accessToken: string;
+  /** The Auth session that completed its second factor. */
+  sessionId: string;
   /** Set when the provider rotated the session's tokens (TOTP); the cookie must follow. */
   session: IdentitySession | null;
 }
@@ -127,14 +144,14 @@ export interface MfaVerifyResult {
 export async function verifyMfaAndLogin(mfaPendingToken: string, code: string): Promise<MfaVerifyResult> {
   const identity = getIdentity();
   const claims = await identity.verifyAccessToken(mfaPendingToken);
-  if (!claims || !(await identity.isSessionActive(claims.sessionId))) {
+  if (!claims || !(await identity.isSessionActive(claims.sessionId, claims.userId))) {
     throw ApiError.unauthorized('MFA session expired, please log in again');
   }
   const user = await prisma.user.findUniqueOrThrow({ where: { id: claims.userId } });
 
   let session: IdentitySession | null = null;
   let valid: boolean;
-  if (user.mfaMethod === 'TOTP') {
+  if ((await loginMfaMethod(user)) === 'TOTP') {
     session = await identity.verifyTotp(mfaPendingToken, code);
     valid = session !== null;
   } else {
@@ -148,7 +165,7 @@ export async function verifyMfaAndLogin(mfaPendingToken: string, code: string): 
   }
 
   await audit(user, 'LOGIN_SUCCESS_MFA');
-  return { user: toSafeUser(user), accessToken: session?.accessToken ?? mfaPendingToken, session };
+  return { user: toSafeUser(user), accessToken: session?.accessToken ?? mfaPendingToken, sessionId: claims.sessionId, session };
 }
 
 /** Marks an Auth session as having passed the EMAIL second factor. */
@@ -179,10 +196,23 @@ export async function refreshSession(refreshToken: string): Promise<IdentitySess
   }
   if (outcome.status !== 'ok') throw ApiError.unauthorized('Refresh token is no longer valid');
   const { session } = outcome;
-  const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { status: true } });
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { status: true, role: true, mfaEnabled: true },
+  });
   if (!user || user.status === 'SUSPENDED') {
     await identity.revokeSession(session.sessionId);
     throw ApiError.unauthorized('Refresh token is no longer valid');
+  }
+  // A login that still owes its second factor is completed at /auth/mfa/*, never extended here.
+  if (isMfaRequiredForRole(user.role, user.mfaEnabled)) {
+    const [claims, emailMfa] = await Promise.all([
+      identity.verifyAccessToken(session.accessToken),
+      prisma.mfaSession.findUnique({ where: { sessionId: session.sessionId }, select: { userId: true } }),
+    ]);
+    if (claims?.aal !== 'aal2' && emailMfa?.userId !== session.userId) {
+      throw ApiError.unauthorized('Multi-factor authentication is required');
+    }
   }
   return session;
 }

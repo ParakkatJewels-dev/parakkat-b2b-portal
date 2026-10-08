@@ -5,3 +5,8 @@ export const otpCodeSchema = z.object({
 });
 
 export type OtpCodeInput = z.infer<typeof otpCodeSchema>;
+
+/** Confirms the authenticator enrolment that /setup/totp returned. */
+export const totpConfirmSchema = otpCodeSchema.extend({
+  factorId: z.string().uuid(),
+});

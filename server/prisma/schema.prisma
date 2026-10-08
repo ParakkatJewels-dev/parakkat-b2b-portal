@@ -235,6 +235,7 @@ model User {
 
   refreshTokens           RefreshToken[]
   mfaSessions             MfaSession[]
+  authSessionInfo         AuthSessionInfo[]
   otpCodes                OtpCode[]
   uploadedDocuments       Document[]                @relation("DocumentUploadedBy")
   decidedApplications     AgencyApplication[]       @relation("ApplicationDecidedBy")
@@ -271,6 +272,19 @@ model MfaSession {
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   verifiedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Who opened each Supabase Auth session, as the portal saw the request. Supabase records the
+// API's own address (it performs the grant), so the security console reads the browser's here.
+model AuthSessionInfo {
+  sessionId String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
 
   @@index([userId])
 }
