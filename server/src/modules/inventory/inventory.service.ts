@@ -1,13 +1,13 @@
 import type { ActorRole, ChannelPolicyKind } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
-import type { RoomTypeAvailability } from '../../lib/axisrooms';
+import type { RoomTypeAvailability } from '../../lib/inventory';
 import { ApiError } from '../../utils/apiError';
 import { recordAuditLogSafe } from '../audit/audit.service';
 
 /**
- * v3 §3 — B2B channel inventory policy layer. Sits between live AxisRooms
+ * v3 §3 — B2B channel inventory policy layer. Sits between live CRS
  * availability and what agencies can book: stop-sell/blackout dates, allocation
- * caps per room type, and per-agency allotments (§4.2). Read-only over AxisRooms
+ * caps per room type, and per-agency allotments (§4.2). Read-only over CRS
  * — it never writes to it; it filters availability and is re-checked at commit.
  *
  * Non-cancelled bookings overlapping the requested stay are treated as consuming

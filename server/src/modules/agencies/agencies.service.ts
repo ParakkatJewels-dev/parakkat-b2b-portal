@@ -184,7 +184,7 @@ export async function createAgency(
     );
   }
 
-  broadcast(['agencies']);
+  await broadcast(['agencies']);
   return agency;
 }
 
@@ -220,7 +220,7 @@ export async function deleteAgency(agencyId: string, actor: Actor) {
     actorRole: actor.actorRole,
     before: { legalName: agency.legalName },
   });
-  broadcast(['agencies'], { agencyId });
+  await broadcast(['agencies'], { agencyId });
   return { deleted: true };
 }
 
@@ -265,6 +265,7 @@ export async function getMyAgencyProfile(agencyId: string) {
       status: true,
       contactEmail: true,
       contactPhone: true,
+      defaultResaleMarkupPct: true,
       activatedAt: true,
       createdAt: true,
       commercialConfigurations: {
@@ -280,6 +281,27 @@ export async function getMyAgencyProfile(agencyId: string) {
   });
   const { commercialConfigurations, ...rest } = agency;
   return { ...rest, commercial: commercialConfigurations[0] ?? null };
+}
+
+/** B2B resale layer — read the default markup (agents need it to prefill the booking form). */
+export async function getMyResaleMarkup(agencyId: string) {
+  return prisma.agency.findUniqueOrThrow({
+    where: { id: agencyId },
+    select: { id: true, defaultResaleMarkupPct: true },
+  });
+}
+
+/**
+ * B2B resale layer — the agency sets the default markup % applied on top of its
+ * buy price to make the customer-facing sell price (overridable per booking).
+ */
+export async function updateMyResaleMarkup(agencyId: string, resaleMarkupPct: number) {
+  const agency = await prisma.agency.update({
+    where: { id: agencyId },
+    data: { defaultResaleMarkupPct: resaleMarkupPct },
+    select: { id: true, defaultResaleMarkupPct: true },
+  });
+  return agency;
 }
 
 /**
@@ -394,7 +416,7 @@ export async function updateAgency(
     },
     after: data as Record<string, string>,
   });
-  broadcast(['agencies'], { agencyId });
+  await broadcast(['agencies'], { agencyId });
   return updated;
 }
 
@@ -449,7 +471,7 @@ export async function updateAgencyCommercialConfig(
     return created;
   });
 
-  broadcast(['agencies'], { agencyId });
+  await broadcast(['agencies'], { agencyId });
   return configuration;
 }
 
@@ -472,7 +494,7 @@ export async function suspendAgency(agencyId: string, actor: Actor) {
     { email: agency.contactEmail, phone: agency.contactPhone },
     { entityType: 'Agency', entityId: agencyId },
   );
-  broadcast(['agencies'], { agencyId });
+  await broadcast(['agencies'], { agencyId });
   return updated;
 }
 
@@ -488,6 +510,6 @@ export async function reactivateAgency(agencyId: string, actor: Actor) {
     { email: agency.contactEmail, phone: agency.contactPhone },
     { entityType: 'Agency', entityId: agencyId },
   );
-  broadcast(['agencies'], { agencyId });
+  await broadcast(['agencies'], { agencyId });
   return updated;
 }

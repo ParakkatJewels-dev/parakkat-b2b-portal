@@ -32,7 +32,7 @@ export async function runReconciliation(): Promise<DriftReport> {
     openChargebacks,
     settledInvoices,
   ] = await Promise.all([
-    prisma.booking.count({ where: { state: 'COMMITTED', axisRoomsRef: null } }),
+    prisma.booking.count({ where: { state: 'COMMITTED', crsBookingRef: null } }),
     prisma.booking.findMany({ where: { state: 'COMMITTED' }, select: { id: true } }),
     prisma.invoice.findMany({ select: { bookingId: true } }),
     prisma.crsOutboxEvent.count({ where: { status: 'PENDING' } }),

@@ -4,9 +4,17 @@ import { useQuery } from '@tanstack/react-query';
 import * as authApi from '../../api/auth.api';
 import * as dashboardApi from '../../api/dashboard.api';
 import { useAuth } from '../../hooks/useAuth';
-import { Icons } from './icons';
-import type { NavNode } from './adminNav';
+import { Icons, type IconName } from './icons';
 import { ThemeToggle } from '../ThemeToggle';
+
+/** One sidebar entry; sub-functions live inside section pages as tabs/actions. */
+export interface NavNode {
+  label: string;
+  to?: string;
+  icon?: IconName;
+  badge?: 'ekyc';
+  children?: NavNode[];
+}
 
 interface NavGroup {
   category: string;

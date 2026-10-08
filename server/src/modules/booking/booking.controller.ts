@@ -5,6 +5,7 @@ import type { AuthUser } from '../../types/express';
 import { assertAgentCan } from '../agents/agents.service';
 import * as bookingService from './booking.service';
 import * as bookingVoucher from './voucher.service';
+import * as customerDocs from './customerDocs.service';
 
 const adminActor = (user: AuthUser) => ({ actorId: user.id, actorRole: user.role as ActorRole });
 
@@ -72,12 +73,36 @@ export async function voucherPdf(req: Request, res: Response): Promise<void> {
     user.role === 'ADMIN'
       ? {}
       : { agencyId: agentActor(user).agencyId, agentId: user.role === 'AGENT' ? user.id : undefined };
-  const { buffer, fileName } = await bookingVoucher.renderVoucherPdf(req.params.id, scope);
+  const variant = req.query.variant === 'agent' ? 'agent' : 'guest';
+  const { buffer, fileName } = await bookingVoucher.renderVoucherPdf(req.params.id, scope, variant);
+  sendPdf(res, buffer, fileName);
+}
+
+function sendPdf(res: Response, buffer: Buffer, fileName: string): void {
   res.status(200);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
   res.setHeader('Content-Length', buffer.length);
   res.end(buffer);
+}
+
+/** Scope for customer documents — same visibility rules as the voucher. */
+function docScope(user: AuthUser) {
+  return user.role === 'ADMIN'
+    ? {}
+    : { agencyId: agentActor(user).agencyId, agentId: user.role === 'AGENT' ? user.id : undefined };
+}
+
+/** Customer quotation PDF (agency-branded, sell price only). */
+export async function customerQuotePdf(req: Request, res: Response): Promise<void> {
+  const { buffer, fileName } = await customerDocs.renderCustomerQuotePdf(req.params.id, docScope(req.user!));
+  sendPdf(res, buffer, fileName);
+}
+
+/** Customer invoice PDF (agency-branded, sell price only). */
+export async function customerInvoicePdf(req: Request, res: Response): Promise<void> {
+  const { buffer, fileName } = await customerDocs.renderCustomerInvoicePdf(req.params.id, docScope(req.user!));
+  sendPdf(res, buffer, fileName);
 }
 
 /** Admin-wide list across all agencies (read-only oversight). */

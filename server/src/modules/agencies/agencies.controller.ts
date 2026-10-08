@@ -18,6 +18,15 @@ export async function myProfile(req: Request, res: Response): Promise<void> {
   res.status(200).json(await agenciesService.getMyAgencyProfile(req.user!.agencyId!));
 }
 
+export async function getResaleMarkup(req: Request, res: Response): Promise<void> {
+  res.status(200).json(await agenciesService.getMyResaleMarkup(req.user!.agencyId!));
+}
+
+export async function updateResaleMarkup(req: Request, res: Response): Promise<void> {
+  const { resaleMarkupPct } = req.body as { resaleMarkupPct: number };
+  res.status(200).json(await agenciesService.updateMyResaleMarkup(req.user!.agencyId!, resaleMarkupPct));
+}
+
 export async function getDetail(req: Request, res: Response): Promise<void> {
   const agency = await agenciesService.getAgencyDetail(req.params.id);
   res.status(200).json(agency);

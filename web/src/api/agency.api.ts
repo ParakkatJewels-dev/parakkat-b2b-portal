@@ -9,6 +9,7 @@ export interface MyAgencyProfile {
   status: 'ACTIVE' | 'SUSPENDED';
   contactEmail: string;
   contactPhone: string;
+  defaultResaleMarkupPct: string;
   activatedAt: string | null;
   createdAt: string;
   commercial: { tier: string; paymentMode: 'PREPAY' | 'CREDIT'; creditLimit: string; paymentTerms: string; markupPct: string } | null;
@@ -18,6 +19,18 @@ export interface MyAgencyProfile {
 /** The signed-in agency's own profile, commercial terms and KYC documents. */
 export async function getMyAgency(): Promise<MyAgencyProfile> {
   return (await httpClient.get('/agencies/me')).data;
+}
+
+// --- B2B resale layer: the agency's default markup over its buy price ---------
+
+/** Readable by AGENCY and AGENT — prefills the booking-time markup control. */
+export async function getResaleMarkup(): Promise<{ id: string; defaultResaleMarkupPct: string }> {
+  return (await httpClient.get('/agencies/me/resale-markup')).data;
+}
+
+/** AGENCY only — sets the default; individual bookings can still override it. */
+export async function updateResaleMarkup(resaleMarkupPct: number): Promise<{ id: string; defaultResaleMarkupPct: string }> {
+  return (await httpClient.patch('/agencies/me/resale-markup', { resaleMarkupPct })).data;
 }
 
 export interface AgencyReport {

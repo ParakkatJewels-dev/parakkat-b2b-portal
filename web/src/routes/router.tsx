@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { LoginPage } from '../auth/LoginPage';
 import { MfaSetupPage, MfaVerifyPage } from '../auth/MfaVerifyPage';
@@ -15,7 +15,6 @@ import { ReportsPage } from '../admin/ReportsPage';
 import { AgencyManagementPage } from '../admin/AgencyManagementPage';
 import { AgencyDetailPage } from '../admin/AgencyDetailPage';
 import { AgentDetailPage } from '../shared/AgentDetailPage';
-import { SectionPlaceholder, type SectionVariant } from '../admin/SectionPlaceholder';
 import { AgentsPage } from '../admin/sections/AgentsPage';
 import { ResortsPage } from '../admin/sections/ResortsPage';
 import { PricingPage } from '../admin/sections/PricingPage';
@@ -42,48 +41,11 @@ import { AgentGuestsPage } from '../agent/sections/AgentGuestsPage';
 import { AgentNotificationsPage } from '../agent/sections/AgentNotificationsPage';
 import { AgentProfilePage } from '../agent/sections/AgentProfilePage';
 import { AgentSupportPage } from '../agent/sections/AgentSupportPage';
-import type { IconName } from '../components/layout/icons';
-
 import { SearchPage } from '../agent/SearchPage';
 import { BookingsPage } from '../agent/BookingsPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
-// Any admin sidebar leaf that doesn't have a purpose-built page yet lands on a
-// titled placeholder derived from its path — one route covers them all, so the
-// full menu is navigable while screens are built out section by section.
-const ICON_HINTS: [RegExp, IconName][] = [
-  [/agent/, 'agents'],
-  [/agenc/, 'agencies'],
-  [/resort|room|meal|bed|occupancy|checkin/, 'resorts'],
-  [/pric|markup|season|festival|promo|base/, 'pricing'],
-  [/book/, 'bookings'],
-  [/pay|invoice|credit|refund|finance|recon/, 'finance'],
-  [/report/, 'reports'],
-  [/notif|template|broadcast/, 'bell'],
-  [/verif|ekyc|kyc/, 'shield'],
-  [/crs/, 'sync'],
-  [/airpay|email|sms|whatsapp|integration/, 'integrations'],
-  [/audit|login|session|failed/, 'activity'],
-  [/security|password|two-factor|ip-/, 'lock'],
-  [/setting/, 'settings'],
-  [/support|ticket/, 'support'],
-];
-
-function iconForPath(path: string): IconName {
-  for (const [re, icon] of ICON_HINTS) if (re.test(path)) return icon;
-  return 'settings';
-}
-
-// Pick the skeleton layout that matches the section's eventual shape.
-function variantForPath(path: string): SectionVariant {
-  if (/setting|policy|config|password|two-factor|ip-|rules|company|financial|portal/.test(path)) return 'form';
-  if (/resort|room|meal|bed|amenit|promo|template|campaign|offer/.test(path)) return 'cards';
-  if (/report|performance|occupancy-report|analytic/.test(path)) return 'reports';
-  return 'table';
-}
-
-// Built-out admin section pages (ADMIN-only). Order doesn't matter — each is a
-// distinct path that outranks the /admin/* placeholder catch-all.
+// Built-out admin section pages (ADMIN-only).
 const ADMIN_PAGES: { path: string; element: JSX.Element }[] = [
   { path: '/admin/agents', element: <AgentsPage /> },
   { path: '/admin/resorts', element: <ResortsPage /> },
@@ -120,13 +82,6 @@ const AGENT_PAGES: { path: string; element: JSX.Element }[] = [
   { path: '/agent/profile', element: <AgentProfilePage /> },
   { path: '/agent/support', element: <AgentSupportPage /> },
 ];
-
-function AdminPlaceholder() {
-  const { pathname } = useLocation();
-  const seg = pathname.split('/').filter(Boolean).pop() ?? 'admin';
-  const title = seg.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  return <SectionPlaceholder title={title} icon={iconForPath(pathname)} variant={variantForPath(pathname)} />;
-}
 
 function RoleHome() {
   const { user } = useAuth();
@@ -245,14 +200,8 @@ export function AppRouter() {
           element={<ProtectedRoute allowedRoles={['AGENT']}>{element}</ProtectedRoute>}
         />
       ))}
-      <Route
-        path="/admin/*"
-        element={
-          <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminPlaceholder />
-          </ProtectedRoute>
-        }
-      />
+      {/* Unknown /admin/* URLs fall through to the global "*" redirect below —
+          no more fake scaffold pages for routes that don't exist. */}
       <Route
         path="/book"
         element={

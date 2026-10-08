@@ -45,7 +45,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900 font-sans antialiased text-slate-600 dark:text-slate-200 relative transition-colors duration-300">
+    <div className="relative flex min-h-screen bg-slate-50 font-sans text-slate-600 antialiased transition-colors duration-300 dark:bg-slate-900 dark:text-slate-200">
       {/* Floating Theme Toggle */}
       <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />
@@ -120,7 +120,7 @@ export function LoginPage() {
       </div>
 
       {/* Right panel - Login form */}
-      <div className="flex w-full items-center justify-center bg-white dark:bg-slate-950 p-6 sm:p-8 lg:w-1/2">
+      <div className="flex min-h-screen w-full items-start justify-center overflow-y-auto bg-white px-4 py-20 dark:bg-slate-950 sm:px-6 sm:py-12 lg:w-1/2 lg:items-center lg:p-8">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_70%,rgba(99,102,241,0.02),rgba(0,0,0,0))] lg:hidden" />
         <div className="relative z-10 w-full max-w-md space-y-6 animate-fade-up">
           {/* Header */}
@@ -243,7 +243,7 @@ export function LoginPage() {
               Select your registration path to unlock curated tariffs.
             </p>
             <div className="mt-4 flex flex-col gap-2.5 text-xs font-semibold">
-              <div className="flex gap-2 justify-center">
+              <div className="flex flex-col justify-center gap-2 sm:flex-row">
                 <Link to="/onboarding/register?type=agency" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-indigo-600 hover:text-indigo-700 hover:border-indigo-500/20 dark:border-slate-800 dark:bg-slate-900/40 dark:text-indigo-400 dark:hover:text-indigo-300 dark:hover:border-indigo-500/30 transition-colors">
                   Agency Registration
                 </Link>

@@ -1,5 +1,5 @@
 /**
- * Tiny in-memory TTL cache for AxisRooms availability reads (Instructions.md
+ * Tiny in-memory TTL cache for CRS availability reads (Instructions.md
  * §10 — "short-TTL cache, refresh-before-book"). In-memory (not Redis) so it
  * works without a running Redis in dev; per-process, which is fine for a
  * short-lived read cache. The booking path always bypasses this for the

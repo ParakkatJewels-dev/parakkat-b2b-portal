@@ -78,7 +78,7 @@ export function getIntegrationsStatus() {
     { key: 'sms', name: 'SMS', provider: env.SMS_PROVIDER, live: env.SMS_PROVIDER === 'msg91' && env.SMS_NOTIFICATIONS_ENABLED, configured: env.SMS_NOTIFICATIONS_ENABLED, category: 'Messaging' },
     { key: 'whatsapp', name: 'WhatsApp', provider: env.WHATSAPP_PROVIDER, live: env.WHATSAPP_PROVIDER === 'meta' && env.WHATSAPP_NOTIFICATIONS_ENABLED, configured: env.WHATSAPP_NOTIFICATIONS_ENABLED, category: 'Messaging' },
     { key: 'ekyc', name: 'eKYC (Digio)', provider: env.DIGIO_PROVIDER, live: env.DIGIO_PROVIDER === 'live', configured: env.DIGIO_PROVIDER === 'live' ? !!env.DIGIO_CLIENT_ID : true, category: 'Verification' },
-    { key: 'axisrooms', name: 'AxisRooms', provider: env.AXISROOMS_PROVIDER, live: env.AXISROOMS_PROVIDER === 'live', configured: true, category: 'Inventory' },
+    { key: 'inventory', name: 'Hotel Inventory', provider: env.INVENTORY_PROVIDER, live: env.INVENTORY_PROVIDER === 'crs', configured: true, category: 'Inventory' },
     { key: 'crs', name: 'CRS', provider: env.CRS_PROVIDER, live: env.CRS_PROVIDER === 'live', configured: env.CRS_PROVIDER === 'live' ? !!env.CRS_API_KEY : true, category: 'Inventory' },
     { key: 'einvoice', name: 'E-Invoicing (IRP)', provider: env.EINVOICE_ENABLED ? 'enabled' : 'disabled', live: env.EINVOICE_ENABLED, configured: true, category: 'Finance' },
   ];

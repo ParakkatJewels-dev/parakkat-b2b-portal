@@ -38,7 +38,7 @@ export function CrsPage() {
     <AppShell>
       <PageHeader
         title="CRS Synchronization"
-        subtitle="AxisRooms/CRS event outbox — booking obligations, payments, refunds and chargebacks posted to the CRS."
+        subtitle="CRS/CRS event outbox — booking obligations, payments, refunds and chargebacks posted to the CRS."
         actions={
           <Button variant="primary" disabled={flush.isPending} onClick={() => flush.mutate()}>
             {flush.isPending ? 'Flushing…' : 'Flush now'}
@@ -57,7 +57,7 @@ export function CrsPage() {
         <div className={`mb-3 flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm ${recon.clean ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
           <Icons.sync className="h-4 w-4" />
           {recon.clean
-            ? 'Reconciliation clean — portal, AxisRooms and CRS are in agreement.'
+            ? 'Reconciliation clean — portal, CRS and CRS are in agreement.'
             : `Drift detected — ${recon.pendingCrsEvents} pending, ${recon.failedCrsEvents} failed CRS events, ${recon.invoiceLedgerMismatches} ledger mismatches. Flush and investigate.`}
         </div>
       )}

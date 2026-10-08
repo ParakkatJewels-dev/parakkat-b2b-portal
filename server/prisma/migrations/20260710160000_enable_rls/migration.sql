@@ -27,4 +27,12 @@ ALTER TABLE "public"."RatePlanRate" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."CreditNote" ENABLE ROW LEVEL SECURITY;
 
 -- Prisma's migration bookkeeping table (also flagged by the advisor).
-ALTER TABLE "public"."_prisma_migrations" ENABLE ROW LEVEL SECURITY;
+-- It exists in the real migration target, but not in Prisma's shadow database
+-- while `prisma migrate dev` replays migrations. Guard it so dev migrations
+-- can validate cleanly against Supabase.
+DO $$
+BEGIN
+  IF to_regclass('public._prisma_migrations') IS NOT NULL THEN
+    ALTER TABLE "public"."_prisma_migrations" ENABLE ROW LEVEL SECURITY;
+  END IF;
+END $$;

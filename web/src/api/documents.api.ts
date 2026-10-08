@@ -28,5 +28,16 @@ export const downloadCreditStatement = () => download('/finance/statements/credi
 
 export const downloadAccountStatement = () => download('/finance/statements/account', 'account-statement.pdf');
 
-export const downloadVoucher = (bookingId: string, ref?: string) =>
-  download(`/bookings/${bookingId}/voucher`, `voucher-${ref ?? bookingId}.pdf`);
+/** guest = price-free (safe to hand to the customer); agent = internal copy with prices. */
+export const downloadVoucher = (bookingId: string, ref?: string, variant: 'guest' | 'agent' = 'guest') =>
+  download(
+    `/bookings/${bookingId}/voucher?variant=${variant}`,
+    `${variant === 'agent' ? 'agent-voucher' : 'voucher'}-${ref ?? bookingId}.pdf`,
+  );
+
+// B2B resale layer — agency-branded customer documents (sell price only).
+export const downloadCustomerQuote = (bookingId: string, ref?: string) =>
+  download(`/bookings/${bookingId}/customer-quote`, `quote-${ref ?? bookingId}.pdf`);
+
+export const downloadCustomerInvoice = (bookingId: string, ref?: string) =>
+  download(`/bookings/${bookingId}/customer-invoice`, `customer-invoice-${ref ?? bookingId}.pdf`);

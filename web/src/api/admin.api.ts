@@ -22,8 +22,9 @@ export interface Paged<T> {
 export async function listApplications(
   lifecycleState?: LifecycleState,
   page = 1,
+  pageSize = 20,
 ): Promise<Paged<ApplicationListItem>> {
-  const res = await httpClient.get('/applications', { params: { lifecycleState, page } });
+  const res = await httpClient.get('/applications', { params: { lifecycleState, page, pageSize } });
   return res.data;
 }
 
@@ -223,7 +224,7 @@ export async function listRefunds(): Promise<AdminRefund[]> {
   return (await httpClient.get('/finance/refunds', { params: { pageSize: 100 } })).data.items;
 }
 
-// --- CRS sync (AxisRooms/CRS outbox) -----------------------------------------
+// --- CRS sync (CRS/CRS outbox) -----------------------------------------
 export interface CrsEvent {
   id: string;
   eventType: string;

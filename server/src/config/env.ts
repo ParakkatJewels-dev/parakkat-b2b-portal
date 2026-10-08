@@ -1,3 +1,4 @@
+import path from 'node:path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
@@ -5,7 +6,11 @@ import { z } from 'zod';
 // first (setting NODE_ENV=test); loading .env here too would leak dev values
 // (e.g. MFA_ENFORCED) into the test environment.
 if (process.env.NODE_ENV !== 'test') {
-  dotenv.config();
+  // Workspace scripts run from server/, while `vercel dev` and the root
+  // Express entry run from the repository root. Load both locations without
+  // overriding values already supplied by the process/Vercel dashboard.
+  dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+  dotenv.config({ path: path.resolve(process.cwd(), 'server/.env') });
 }
 
 /**
@@ -66,6 +71,11 @@ const baseSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   SUPABASE_STORAGE_BUCKET: z.string().optional(),
 
+  // Supabase Broadcast replaces the process-local Socket.IO fan-out when the
+  // API runs as a Vercel Function. Broadcast payloads contain cache topics only.
+  REALTIME_ENABLED: boolEnv(false),
+  REALTIME_CHANNEL_SECRET: z.string().min(16).optional().or(z.literal('')),
+
   MAILER_PROVIDER: z.enum(['resend', 'console']).default('console'),
   RESEND_API_KEY: z.string().optional(),
   MAIL_FROM: z.string().default('no-reply@parakkatjewels.com'),
@@ -86,7 +96,11 @@ const baseSchema = z.object({
   CAPTCHA_SECRET: z.string().optional(),
 
   // Max upload size (bytes) for onboarding documents. Default 10 MB.
-  MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
+  MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10 * 1024 * 1024),
 
   // --- Digio KYB/eKYC (Phase 3) ---
   // mock: no live calls; results are driven via the webhook endpoint / manual
@@ -110,23 +124,29 @@ const baseSchema = z.object({
   // App base URL used to build eSign / activation links in emails.
   APP_BASE_URL: z.string().default('http://localhost:5173'),
 
+  // Placeholder guard escape hatch. Production boots REFUSE mock/console/local
+  // providers and localhost URLs unless this is explicitly set — so a demo or
+  // staging deployment must declare itself, and a real launch can never run on
+  // fakes silently.
+  ALLOW_MOCK_PROVIDERS: boolEnv(false),
+
   // --- Notifications (Phase 5) ---
   // Send SMS alongside email for time-sensitive events (eSign, activation).
   SMS_NOTIFICATIONS_ENABLED: boolEnv(false),
 
-  // --- Booking / AxisRooms (Phase 6) ---
-  AXISROOMS_PROVIDER: z.enum(['mock', 'live']).default('mock'),
-  AXISROOMS_BASE_URL: z.string().optional(),
-  AXISROOMS_API_KEY: z.string().optional(),
-  // Simulate AxisRooms downtime to exercise block-don't-queue behaviour.
-  AXISROOMS_FORCE_DOWN: boolEnv(false),
+  // --- Booking / hotel inventory (Phase 6) ---
+  // mock: in-memory dev catalogue. crs: the hotel's CRS (client lands once the
+  // CRS company provides API docs — selecting it before then fails at boot).
+  INVENTORY_PROVIDER: z.enum(['mock', 'crs']).default('mock'),
+  // Simulate inventory-source downtime to exercise block-don't-queue behaviour.
+  INVENTORY_FORCE_DOWN: boolEnv(false),
   // Tentative-hold TTL for pay-first bookings (default 15 min, §10).
   BOOKING_HOLD_TTL_MINUTES: z.coerce.number().int().positive().default(15),
   // Stay-date guardrails: no past check-in, a max stay length, and how far ahead
   // a booking may be made. Enforced server-side (authoritative) on search + book.
   BOOKING_MAX_STAY_NIGHTS: z.coerce.number().int().positive().default(30),
   BOOKING_MAX_ADVANCE_DAYS: z.coerce.number().int().positive().default(365),
-  // v3 §5.2 — max automatic AxisRooms rebook attempts before a commit-failed
+  // v3 §5.2 — max automatic CRS rebook attempts before a commit-failed
   // booking is parked for manual admin resolution.
   REBOOK_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   // Short-TTL availability cache (seconds).
@@ -195,12 +215,16 @@ const baseSchema = z.object({
   HOLD_SWEEP_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
   // Retry PENDING CRS outbox events that failed inline delivery.
   CRS_FLUSH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
-  // Retry COMMIT_FAILED bookings queued for AxisRooms rebook.
+  // Retry COMMIT_FAILED bookings queued for CRS rebook.
   REBOOK_QUEUE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(120),
   // Dunning (overdue reminders / auto-suspend / credit alerts). Defaults to daily
   // to avoid re-notifying overdue agencies too often; for a precise time-of-day
   // run, disable this and hit POST /finance/dunning/run from an external cron.
   DUNNING_INTERVAL_SECONDS: z.coerce.number().int().positive().default(86400),
+
+  // Vercel automatically sends this value as `Authorization: Bearer ...` when
+  // invoking routes declared in vercel.json.
+  CRON_SECRET: z.string().min(16).optional().or(z.literal('')),
 });
 
 const parsed = baseSchema.safeParse(process.env);
@@ -219,6 +243,7 @@ const data = parsed.data;
 
 if (data.NODE_ENV === 'production') {
   const productionErrors: string[] = [];
+  if (!data.CRON_SECRET) productionErrors.push('CRON_SECRET is required in production');
   if (data.STORAGE_PROVIDER === 's3') {
     if (!data.S3_BUCKET) productionErrors.push('S3_BUCKET is required when STORAGE_PROVIDER=s3');
     if (!data.S3_REGION) productionErrors.push('S3_REGION is required when STORAGE_PROVIDER=s3');
@@ -228,18 +253,29 @@ if (data.NODE_ENV === 'production') {
       productionErrors.push('S3_SECRET_ACCESS_KEY is required when STORAGE_PROVIDER=s3');
   }
   if (data.STORAGE_PROVIDER === 'supabase') {
-    if (!data.SUPABASE_URL) productionErrors.push('SUPABASE_URL is required when STORAGE_PROVIDER=supabase');
+    if (!data.SUPABASE_URL)
+      productionErrors.push('SUPABASE_URL is required when STORAGE_PROVIDER=supabase');
     if (!data.SUPABASE_SERVICE_ROLE_KEY)
       productionErrors.push('SUPABASE_SERVICE_ROLE_KEY is required when STORAGE_PROVIDER=supabase');
     if (!data.SUPABASE_STORAGE_BUCKET)
       productionErrors.push('SUPABASE_STORAGE_BUCKET is required when STORAGE_PROVIDER=supabase');
   }
+  if (data.REALTIME_ENABLED) {
+    if (!data.SUPABASE_URL)
+      productionErrors.push('SUPABASE_URL is required when REALTIME_ENABLED=true');
+    if (!data.SUPABASE_SERVICE_ROLE_KEY)
+      productionErrors.push('SUPABASE_SERVICE_ROLE_KEY is required when REALTIME_ENABLED=true');
+    if (!data.REALTIME_CHANNEL_SECRET)
+      productionErrors.push('REALTIME_CHANNEL_SECRET is required when REALTIME_ENABLED=true');
+  }
   if (data.MAILER_PROVIDER === 'resend' && !data.RESEND_API_KEY) {
     productionErrors.push('RESEND_API_KEY is required when MAILER_PROVIDER=resend');
   }
   if (data.DIGIO_PROVIDER === 'live') {
-    if (!data.DIGIO_BASE_URL) productionErrors.push('DIGIO_BASE_URL is required when DIGIO_PROVIDER=live');
-    if (!data.DIGIO_CLIENT_ID) productionErrors.push('DIGIO_CLIENT_ID is required when DIGIO_PROVIDER=live');
+    if (!data.DIGIO_BASE_URL)
+      productionErrors.push('DIGIO_BASE_URL is required when DIGIO_PROVIDER=live');
+    if (!data.DIGIO_CLIENT_ID)
+      productionErrors.push('DIGIO_CLIENT_ID is required when DIGIO_PROVIDER=live');
     if (!data.DIGIO_CLIENT_SECRET)
       productionErrors.push('DIGIO_CLIENT_SECRET is required when DIGIO_PROVIDER=live');
   }
@@ -249,20 +285,54 @@ if (data.NODE_ENV === 'production') {
   if (data.PAYMENT_WEBHOOK_SECRET === 'dev-payment-webhook-secret') {
     productionErrors.push('PAYMENT_WEBHOOK_SECRET must be set to a real secret in production');
   }
-  if (data.AXISROOMS_PROVIDER === 'live') {
-    if (!data.AXISROOMS_BASE_URL) productionErrors.push('AXISROOMS_BASE_URL is required when AXISROOMS_PROVIDER=live');
-    if (!data.AXISROOMS_API_KEY) productionErrors.push('AXISROOMS_API_KEY is required when AXISROOMS_PROVIDER=live');
+  if (data.INVENTORY_PROVIDER === 'crs') {
+    if (!data.CRS_BASE_URL)
+      productionErrors.push('CRS_BASE_URL is required when INVENTORY_PROVIDER=crs');
+    if (!data.CRS_API_KEY)
+      productionErrors.push('CRS_API_KEY is required when INVENTORY_PROVIDER=crs');
   }
   if (data.CRS_PROVIDER === 'live') {
-    if (!data.CRS_INGEST_URL) productionErrors.push('CRS_INGEST_URL is required when CRS_PROVIDER=live');
+    if (!data.CRS_INGEST_URL)
+      productionErrors.push('CRS_INGEST_URL is required when CRS_PROVIDER=live');
     if (!data.CRS_TOKEN) productionErrors.push('CRS_TOKEN is required when CRS_PROVIDER=live');
   }
   if (data.PAYMENT_PROVIDER === 'airpay') {
-    if (!data.AIRPAY_MERCHANT_ID) productionErrors.push('AIRPAY_MERCHANT_ID is required when PAYMENT_PROVIDER=airpay');
-    if (!data.AIRPAY_SECRET) productionErrors.push('AIRPAY_SECRET is required when PAYMENT_PROVIDER=airpay');
+    if (!data.AIRPAY_MERCHANT_ID)
+      productionErrors.push('AIRPAY_MERCHANT_ID is required when PAYMENT_PROVIDER=airpay');
+    if (!data.AIRPAY_SECRET)
+      productionErrors.push('AIRPAY_SECRET is required when PAYMENT_PROVIDER=airpay');
   }
   if (data.CAPTCHA_ENABLED && !data.CAPTCHA_SECRET) {
     productionErrors.push('CAPTCHA_SECRET is required when CAPTCHA_ENABLED=true');
+  }
+  // Placeholder guard — production must never run on fakes silently. Each
+  // mock/console/local provider and localhost URL is rejected unless
+  // ALLOW_MOCK_PROVIDERS=true declares this a demo/staging deployment.
+  if (!data.ALLOW_MOCK_PROVIDERS) {
+    const mocked: [string, boolean][] = [
+      ['INVENTORY_PROVIDER=mock', data.INVENTORY_PROVIDER === 'mock'],
+      ['CRS_PROVIDER=mock', data.CRS_PROVIDER === 'mock'],
+      ['PAYMENT_PROVIDER=mock', data.PAYMENT_PROVIDER === 'mock'],
+      ['DIGIO_PROVIDER=mock', data.DIGIO_PROVIDER === 'mock'],
+      ['MAILER_PROVIDER=console', data.MAILER_PROVIDER === 'console'],
+      ['SMS_PROVIDER=console', data.SMS_PROVIDER === 'console' && data.SMS_NOTIFICATIONS_ENABLED],
+      ['WHATSAPP_PROVIDER=console', data.WHATSAPP_PROVIDER === 'console' && data.WHATSAPP_NOTIFICATIONS_ENABLED],
+      ['STORAGE_PROVIDER=local', data.STORAGE_PROVIDER === 'local'],
+    ];
+    for (const [label, isMock] of mocked) {
+      if (isMock) {
+        productionErrors.push(
+          `${label} is a dev/mock provider — not allowed in production (set ALLOW_MOCK_PROVIDERS=true only for a demo/staging deployment)`,
+        );
+      }
+    }
+    const isLocalUrl = (u: string) => u.includes('localhost') || u.includes('127.0.0.1');
+    if (isLocalUrl(data.APP_BASE_URL)) {
+      productionErrors.push('APP_BASE_URL points at localhost — emails would carry dead links (set ALLOW_MOCK_PROVIDERS=true only for a demo/staging deployment)');
+    }
+    if (isLocalUrl(data.CORS_ORIGIN)) {
+      productionErrors.push('CORS_ORIGIN points at localhost (set ALLOW_MOCK_PROVIDERS=true only for a demo/staging deployment)');
+    }
   }
   if (productionErrors.length > 0) {
     // eslint-disable-next-line no-console

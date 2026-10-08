@@ -66,14 +66,14 @@ Every external integration (AxisRooms, Digio, CRS, Airpay) runs behind a swappab
   RBAC + MFA (TOTP/email OTP), Winston/Morgan logging, Swagger docs, Vitest.
 - **Web** (`web`): React + TypeScript + Vite + Tailwind CSS, React Router, TanStack Query,
   Zustand.
-- npm workspaces monorepo: `server/` (backend, deploys to Render) + `web/` (frontend, deploys to
-  Vercel).
+- One deployable full-stack application: `server/` and `web/` remain internal workspaces for code
+  organization, while the root Express entry serves both under one Vercel domain.
 
 ## Prerequisites
 
 - Node.js 20+
-- A **PostgreSQL** connection string (`DATABASE_URL`) — a managed database works for both local and
-  production (e.g. Render Postgres, Neon, or Supabase). No Docker or local DB install required.
+- A **Supabase PostgreSQL** connection string (`DATABASE_URL`) works for both local and production.
+  No Docker or local database installation is required.
   (Supabase note: use the **Session pooler** URL — the direct host is IPv6-only.)
 
 ## Setup
@@ -89,27 +89,32 @@ cp server/.env.example server/.env
 #   MFA_ENCRYPTION_KEY  (exactly 64 hex chars)
 #     node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
-npm run db:migrate --workspace server   # applies all migrations
-npm run db:seed --workspace server      # creates admin + demo login users
+npm run db:generate                      # generates Prisma Client
+npm run db:migrate                       # applies local development migrations
+npm run db:seed                          # creates admin + demo login users
 
 # Frontend env (defaults are fine for local dev — Vite proxies /api to :4000):
 cp web/.env.example web/.env
 
-npm run dev:api   # http://localhost:4000 (Swagger docs at /api/docs)
-npm run dev:web   # http://localhost:5173
+npm run dev       # web: http://localhost:5173, API/docs: http://localhost:4000/api/docs
 ```
 
 ## Deployment
 
-- **Backend → Render.** `render.yaml` (repo root) is a Blueprint that provisions a managed Postgres
-  and a web service: it builds the `server` workspace, runs `prisma migrate deploy`, and starts
-  `node dist/server.js`. Set `MFA_ENCRYPTION_KEY`, `DIGIO_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET`,
-  `CORS_ORIGIN` (your Vercel URL) and `APP_BASE_URL` in the dashboard (marked `sync: false`).
-  Note Render's disk is ephemeral, so set `STORAGE_PROVIDER=s3` with an S3-compatible bucket
-  (Cloudflare R2 / Supabase Storage / Backblaze B2) for persistent document storage.
-- **Frontend → Vercel.** `vercel.json` (repo root) builds the `web` workspace to `web/dist` with an
-  SPA rewrite. Set `VITE_API_BASE_URL` to the deployed Render API URL (e.g.
-  `https://<service>.onrender.com/api`).
+- Import the **repository root** as one Vercel project. The root `index.ts` is the Express Function;
+  `npm run build` compiles the API and writes the React application to `public/` for Vercel's CDN.
+- Leave `VITE_API_BASE_URL` empty. Browser requests use same-origin `/api`, so preview and production
+  deployments work without a separately configured API host.
+- Add the values from `server/.env.example` to Vercel, including `DATABASE_URL`, JWT/MFA/webhook
+  secrets, `APP_BASE_URL`, `CRON_SECRET`, and the Supabase storage credentials. Use
+  `STORAGE_PROVIDER=supabase`; Vercel Functions do not provide persistent local file storage.
+- For live updates, set `REALTIME_ENABLED=true`, `REALTIME_CHANNEL_SECRET`, `VITE_SUPABASE_URL`, and
+  `VITE_SUPABASE_PUBLISHABLE_KEY`. The service-role key remains server-only.
+- Run `npm run db:migrate:deploy` against Supabase before the production deployment. Migrations are
+  intentionally not run during Vercel builds because preview builds may run concurrently.
+- The five-minute maintenance schedule in `vercel.json` requires Vercel Pro; Hobby permits only
+  daily cron schedules. The repository is also GitHub-organization-owned, which requires a paid
+  Vercel team for Git integration. Dunning runs daily at 03:00 UTC.
 
 ### Logging in
 
@@ -118,8 +123,8 @@ The seed creates these users (dev):
 | Login | Password | Role | MFA |
 |---|---|---|---|
 | `admin@parakkatjewels.com` | `admin123` | ADMIN | required (TOTP setup on first login) |
-| `agency@demo.local` | `demo1234` | AGENCY | none — logs in directly |
-| `agent@demo.local` | `demo1234` | AGENT | none — logs in directly |
+| `agency@demo.com` | `agency123` | AGENCY | none — logs in directly |
+| `agent@demo.com` | `agent123` | AGENT | none — logs in directly |
 
 ADMIN/VERIFIER mandate MFA, so the admin's first login returns `mfaSetupRequired` and the frontend
 routes to a TOTP enrollment QR — scan it with any authenticator app, confirm the code, and you're
@@ -259,12 +264,12 @@ any commit — if it's down the booking is **blocked, never queued** (simulate w
 `AXISROOMS_FORCE_DOWN=true`). Everything is agency-scoped and gated on an ACTIVE
 agency. Covered end-to-end in `server/tests/integration/booking.flow.test.ts`.
 
-The seeded demo agency (`agency@demo.local` / `agent@demo.local`, password
-`demo1234`) has GOLD credit terms, so it can book immediately from
+The seeded demo agency (`agency@demo.com` / `agency123`) and agent
+(`agent@demo.com` / `agent123`) have GOLD credit terms, so they can book immediately from
 `/book` in the web app.
 
 ## Environment variables
 
-See `server/.env.example` and `web/.env.example` for the full, authoritative list — each
-variable is documented inline. `server/src/config/env.ts` validates these at boot with Zod and
+See `server/.env.example` for server-only values and `web/.env.example` for the two public Supabase
+browser values. `server/src/config/env.ts` validates server configuration at boot with Zod and
 fails fast if anything required is missing or malformed.

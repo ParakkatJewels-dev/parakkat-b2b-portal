@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "express",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "functions": {
+    "index.ts": {
+      "includeFiles": "public/**",
+      "maxDuration": 300
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/maintenance",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/dunning",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}

@@ -10,7 +10,10 @@ describe('company profile', () => {
   it('returns sensible defaults', () => {
     const p = getCompanyProfile();
     expect(p.name).toContain('Parakkat');
-    expect(p.gstin).toBeTruthy();
+    // Identity fields with no real value default EMPTY (never a fabricated
+    // GSTIN/phone) — admins supply the real ones via System Settings.
+    expect(p.gstin).toBe('');
+    expect(p.phone).toBe('');
     expect(Array.isArray(p.addressLines)).toBe(true);
     expect(p.addressLines.length).toBeGreaterThan(0);
   });

@@ -73,6 +73,37 @@ agenciesRouter.get('/me', authenticate, requireRole('AGENCY'), asyncHandler(agen
 
 /**
  * @openapi
+ * /agencies/me/resale-markup:
+ *   get:
+ *     summary: The agency's default resale markup % — agents read it to prefill bookings (AGENCY/AGENT)
+ *     tags: [Agencies]
+ *     security: [{ bearerAuth: [] }]
+ */
+agenciesRouter.get(
+  '/me/resale-markup',
+  authenticate,
+  requireRole('AGENCY', 'AGENT'),
+  asyncHandler(agenciesController.getResaleMarkup),
+);
+
+/**
+ * @openapi
+ * /agencies/me/resale-markup:
+ *   patch:
+ *     summary: Set the agency's default resale markup % (B2B sell-price layer) (AGENCY)
+ *     tags: [Agencies]
+ *     security: [{ bearerAuth: [] }]
+ */
+agenciesRouter.patch(
+  '/me/resale-markup',
+  authenticate,
+  requireRole('AGENCY'),
+  validate({ body: z.object({ resaleMarkupPct: z.number().min(0).max(500) }) }),
+  asyncHandler(agenciesController.updateResaleMarkup),
+);
+
+/**
+ * @openapi
  * /agencies/{id}/detail:
  *   get:
  *     summary: Rich admin view of an agency — profile, terms, users, docs, financials (ADMIN/VERIFIER)

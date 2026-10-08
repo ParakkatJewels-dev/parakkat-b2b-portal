@@ -6,7 +6,8 @@ This document provides a comprehensive technical and functional analysis of the 
 
 ## 1. System Architecture & Technology Stack
 
-The project is structured as an **npm workspaces monorepo** with a clean separation between the frontend client and the backend server.
+The project uses npm workspaces to organize the frontend and API, but deploys them together as one
+Vercel application and domain.
 
 ```mermaid
 graph TD
@@ -24,7 +25,8 @@ graph TD
     end
 
     subgraph Database
-        DB[(PostgreSQL Database)]
+        DB[(Supabase PostgreSQL)]
+        Realtime[Supabase Broadcast]
     end
 
     subgraph External [External Integrations]
@@ -36,7 +38,9 @@ graph TD
 
     UI --> State
     State --> Query
-    Query -->|HTTPS / Socket.IO| Router
+    Query -->|same-origin HTTPS /api| Router
+    Router -->|cache invalidations| Realtime
+    Realtime --> Query
     Router --> Modules
     Modules --> Prisma
     Prisma --> DB
@@ -50,13 +54,13 @@ graph TD
 * **State Management:** Zustand (lightweight client state).
 * **Data Fetching:** TanStack React Query (server state synchronization) & Axios.
 * **Visualizations:** Recharts (used for admin and agency dashboards).
-* **Realtime:** Socket.IO Client (for UI invalidation signals from the server).
+* **Realtime:** Supabase Broadcast for UI invalidation signals, with periodic refresh fallback.
 
 ### Backend (`/server`)
-* **Core:** Node.js, Express, TypeScript.
+* **Core:** Node.js, Express, TypeScript, exported as one Vercel Function.
 * **Database Access:** Prisma ORM targeting PostgreSQL.
 * **Authentication/Security:** JWT (Access + Refresh tokens), MFA (TOTP/Email OTP), Helmet, CORS, and Express Rate Limit.
-* **File Storage:** AWS S3 (with fallback to local storage for dev/test).
+* **File Storage:** Supabase Storage in production (with local storage for dev/test).
 * **Logging:** Winston (JSON-formatted, with correlation IDs for request tracing) + Morgan.
 * **Testing:** Vitest + Supertest.
 

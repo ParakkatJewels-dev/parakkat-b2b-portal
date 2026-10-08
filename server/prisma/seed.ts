@@ -10,7 +10,11 @@ function generateStrongPassword(): string {
 
 async function main() {
   const email = process.env.ADMIN_SEED_EMAIL || 'admin@parakkatjewels.com';
-  let password = process.env.ADMIN_SEED_PASSWORD || 'admin123';
+  // 'admin123' is a DEV convenience only. In production an unset
+  // ADMIN_SEED_PASSWORD gets a random password (printed once) — a well-known
+  // default admin credential must never reach a live system.
+  const isProduction = process.env.NODE_ENV === 'production';
+  let password = process.env.ADMIN_SEED_PASSWORD || (isProduction ? '' : 'admin123');
   let generated = false;
 
   if (!password) {
@@ -107,7 +111,7 @@ async function main() {
     // eslint-disable-next-line no-console
     console.log('Demo users ready (no MFA): agency@demo.com / agency123  ·  agent@demo.com / agent123');
   }
-  // v4 §1 — rate plans, occupancy and restrictions now come from AxisRooms (the
+  // v4 §1 — rate plans, occupancy and restrictions now come from CRS (the
   // mock serves them); the portal no longer seeds local pricing tables.
 }
 

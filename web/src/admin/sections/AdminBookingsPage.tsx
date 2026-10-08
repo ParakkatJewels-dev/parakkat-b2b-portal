@@ -172,7 +172,7 @@ export function AdminBookingsPage() {
             <Detail label="Category" value={<Badge tone={CATEGORY_TONE[bookingCategory(selected)]}>{bookingCategory(selected)}</Badge>} />
             {selected.leadGuestName && <Detail label="Lead guest" value={selected.leadGuestName} />}
             {selected.guestIdLast4 && <Detail label="Guest ID" value={`${selected.guestIdType ?? 'ID'} ••••${selected.guestIdLast4}`} />}
-            {selected.axisRoomsRef && <Detail label="AxisRooms ref" value={selected.axisRoomsRef} />}
+            {selected.crsBookingRef && <Detail label="CRS ref" value={selected.crsBookingRef} />}
           </div>
         </Modal>
       )}

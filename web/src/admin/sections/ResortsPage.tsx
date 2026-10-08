@@ -30,7 +30,7 @@ export function ResortsPage() {
     <AppShell>
       <PageHeader
         title="Resort Management"
-        subtitle="Resorts and room inventory — sourced from AxisRooms (read-only)."
+        subtitle="Resorts and room inventory — sourced from CRS (read-only)."
       />
       <Tabs
         tabs={[
@@ -59,7 +59,7 @@ export function ResortsPage() {
                       <div className="font-semibold text-slate-800">{r.name}</div>
                       <div className="text-xs text-slate-400">{r.location}</div>
                     </div>
-                    <Badge tone="sky">AxisRooms</Badge>
+                    <Badge tone="sky">CRS</Badge>
                   </div>
                   <div className="mt-3 text-xs text-slate-500">{r.roomCount} room type{r.roomCount === 1 ? '' : 's'}</div>
                 </div>
@@ -67,7 +67,7 @@ export function ResortsPage() {
             ))}
             {resorts.length === 0 && (
               <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500">
-                No resorts returned from AxisRooms.
+                No resorts returned from CRS.
               </div>
             )}
           </div>
@@ -81,7 +81,7 @@ export function ResortsPage() {
       )}
 
       <p className="mt-3 text-xs text-slate-400">
-        Resorts, room types and inventory are managed in AxisRooms and shown here read-only. Portal-side rates (net + markup) are in{' '}
+        Resorts, room types and inventory are managed in CRS and shown here read-only. Portal-side rates (net + markup) are in{' '}
         <a href="/admin/pricing" className="text-blue-600 hover:underline">Pricing</a>.
       </p>
     </AppShell>

@@ -5,40 +5,38 @@ per-phase feature list are in the root `README.md`; external integrations are in
 `docs/API-CONTRACTS.md`.
 
 ## Services
-- **API** (`server`) — Express + Prisma, port 4000. Entry `src/server.ts` (`dist/server.js` in prod).
-- **Web** (`web`) — Vite/React SPA, port 5173.
-- **PostgreSQL** — system of record for portal-owned data (managed: Render/Neon/Supabase).
+- **Portal** — one Vercel project and domain. The root `index.ts` exports Express as a Function and
+  Vercel's CDN serves the Vite build from `public/`.
+- **PostgreSQL + Storage + Realtime** — Supabase provides the persistent data services.
 
 Notifications are delivered synchronously; the CRS outbox is flushed inline after each financial
 change (no Redis/queue/worker). Async/queued delivery is a future enhancement.
 
-**Realtime (Socket.IO):** the API pushes lightweight "invalidate" signals to connected clients so
-multi-user changes appear live (JWT-authed handshake, scoped to `admin` / `agency:<id>` rooms). The
-frontend connects to the API origin (`VITE_API_BASE_URL` origin, or `localhost:4000` in dev), so
-CORS_ORIGIN must include the web origin. It uses the in-memory adapter → **single API instance**;
-scaling to multiple instances needs a Socket.IO Postgres/Redis adapter for cross-instance fan-out.
+**Realtime (Supabase Broadcast):** the API sends lightweight cache-topic invalidations through
+Supabase. Authenticated clients obtain HMAC-derived admin/agency channel names from
+`GET /api/realtime/config`; no business records are included in a broadcast. The frontend polls
+active data once per minute if Realtime is unavailable.
 
 ## Local run
 ```bash
 npm install
-# Set server/.env DATABASE_URL to a managed Postgres (Render/Neon/Supabase).
-npm run db:migrate --workspace server  # once
-npm run db:seed    --workspace server  # admin + demo users (see README)
-npm run dev:api                        # terminal 1 — API on :4000
-npm run dev:web                        # terminal 2 — web on :5173
+# Set server/.env DATABASE_URL to Supabase.
+npm run db:generate
+npm run db:migrate                     # once
+npm run db:seed                        # admin + demo users (see README)
+npm run dev                            # web :5173 + API :4000
 ```
 
-## Deploy (Render + Vercel)
-- **Backend → Render.** `render.yaml` (repo root) provisions a managed Postgres and a Node web
-  service: build the `server` workspace → `prisma migrate deploy` → `node dist/server.js`
-  (health check `/api/health/live`). Set the `sync: false` secrets in the dashboard:
-  `MFA_ENCRYPTION_KEY` (64 hex), `DIGIO_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET`,
-  `CORS_ORIGIN` (Vercel URL), `APP_BASE_URL` (Vercel URL). Production refuses to boot with dev
-  webhook-secret defaults or missing live-provider credentials (see `config/env.ts`).
-- **Frontend → Vercel.** `vercel.json` (repo root) builds the `web` workspace to `web/dist` with an
-  SPA rewrite. Set `VITE_API_BASE_URL` to the Render API URL.
-- Persistent document storage: Render's disk is ephemeral, so use `STORAGE_PROVIDER=s3` with an
-  S3-compatible bucket (Cloudflare R2 / Supabase Storage / Backblaze B2) in production.
+## Deploy (one Vercel project)
+- Import the repository root and keep the framework/root settings from `vercel.json`.
+- Configure the server values from `server/.env.example` and public `VITE_*` values from
+  `web/.env.example`. Keep `VITE_API_BASE_URL` empty.
+- Set `STORAGE_PROVIDER=supabase`, `SCHEDULER_ENABLED=false`, a random `CRON_SECRET`, and
+  `REALTIME_ENABLED=true` with a random `REALTIME_CHANNEL_SECRET`.
+- Apply migrations separately with `npm run db:migrate:deploy`, then deploy. Verify
+  `/api/health/live`, `/api/health/ready`, a login, an SPA deep link, and uploaded-file access.
+- `vercel.json` invokes maintenance every five minutes and dunning daily. The five-minute schedule
+  requires Vercel Pro; use an external scheduler against the same protected routes otherwise.
 - Set `MFA_ENFORCED=true` and switch providers to `live`/`airpay` when their credentials/contracts
   are available (see `docs/API-CONTRACTS.md`).
 

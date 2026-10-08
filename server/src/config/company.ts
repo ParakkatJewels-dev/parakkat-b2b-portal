@@ -9,10 +9,13 @@ import type { CompanyProfile } from '../lib/pdf/pdf';
 const DEFAULT_COMPANY: CompanyProfile = {
   name: 'Parakkat Resorts & Holidays',
   addressLines: ['Parakkat Nature Resort', 'Munnar, Idukki, Kerala 685612, India'],
-  gstin: '32AABCP1234A1Z2',
+  // GSTIN and phone intentionally EMPTY by default: never print a fabricated
+  // tax number or contact on real documents. Admins set the real values in
+  // System Settings; PDF rendering skips empty fields.
+  gstin: '',
   email: 'support@parakkatjewels.com',
-  phone: '+91 98470 00000',
-  website: 'https://www.parakkatresorts.com',
+  phone: '',
+  website: '',
 };
 
 let override: Partial<CompanyProfile> = {};

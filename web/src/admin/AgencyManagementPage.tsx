@@ -443,10 +443,10 @@ function CreateAgencyForm({ onClose, onError }: { onClose: () => void; onError: 
 
   const fields: { key: Exclude<keyof CreateAgencyInput, 'tier' | 'isIndependent'>; label: string; placeholder?: string }[] = [
     { key: 'legalName', label: 'Legal name' },
-    ...(!isIndependent ? [{ key: 'gstin' as const, label: 'GSTIN', placeholder: '27AABCU9603R1ZM' }] : []),
-    { key: 'pan', label: 'PAN', placeholder: 'AABCU9603R' },
+    ...(!isIndependent ? [{ key: 'gstin' as const, label: 'GSTIN', placeholder: '22AAAAA0000A1Z5' }] : []),
+    { key: 'pan', label: 'PAN', placeholder: 'AAAAA0000A' },
     { key: 'contactEmail', label: 'Contact email' },
-    { key: 'contactPhone', label: 'Contact phone', placeholder: '9876543210' },
+    { key: 'contactPhone', label: 'Contact phone', placeholder: '10-digit mobile' },
   ];
 
   function submit(e: FormEvent) {

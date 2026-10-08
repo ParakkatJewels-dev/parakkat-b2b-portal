@@ -1,66 +1,77 @@
-import type { Server as HttpServer } from 'node:http';
-import { Server } from 'socket.io';
+import { createHmac } from 'node:crypto';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env } from '../config/env';
 import { logger } from './logger';
-import { verifyAccessToken } from '../modules/auth/token.service';
 
-/**
- * Real-time layer (Socket.IO) for multi-user live updates. The server never
- * pushes data — it emits lightweight "invalidate" signals naming the topics
- * that changed; each client refetches the matching React Query keys. Scoped by
- * rooms so tenants only hear about their own data:
- *   - `admin`            — ADMIN/VERIFIER users (see all activity)
- *   - `agency:<id>`      — that agency's AGENCY/AGENT users
- *
- * NOTE: uses the in-memory adapter, so it assumes a single server instance
- * (fine for Render's single-instance services). Scaling to multiple instances
- * needs a Socket.IO adapter (Postgres/Redis) for cross-instance fan-out.
- */
-let io: Server | undefined;
+let client: SupabaseClient | undefined;
 
-interface SocketData {
-  role: string;
-  agencyId: string | null;
+export function isRealtimeEnabled(): boolean {
+  return Boolean(
+    env.REALTIME_ENABLED &&
+    env.SUPABASE_URL &&
+    env.SUPABASE_SERVICE_ROLE_KEY &&
+    env.REALTIME_CHANNEL_SECRET,
+  );
 }
 
-export function initRealtime(httpServer: HttpServer): void {
-  io = new Server(httpServer, {
-    cors: {
-      origin: env.CORS_ORIGIN.split(',').map((s) => s.trim()),
-      credentials: true,
-    },
+function getClient(): SupabaseClient {
+  if (!isRealtimeEnabled()) throw new Error('Supabase Realtime is not configured');
+  client ??= createClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+  return client;
+}
 
-  // Authenticate the handshake with the same access token the REST API uses.
-  io.use((socket, next) => {
-    try {
-      const token = (socket.handshake.auth?.token ?? '') as string;
-      if (!token) return next(new Error('unauthorized'));
-      const payload = verifyAccessToken(token);
-      (socket.data as SocketData) = { role: payload.role, agencyId: payload.agencyId };
-      next();
-    } catch {
-      next(new Error('unauthorized'));
+function channelForScope(scope: string): string {
+  const deployment = process.env.VERCEL_ENV ?? env.NODE_ENV;
+  const digest = createHmac('sha256', env.REALTIME_CHANNEL_SECRET!)
+    .update(`${deployment}:${scope}`)
+    .digest('base64url');
+  return `portal:invalidate:${digest}`;
+}
+
+export function getRealtimeChannels(role: string, agencyId: string | null): string[] {
+  if (!isRealtimeEnabled()) return [];
+
+  const channels: string[] = [];
+  if (role === 'ADMIN' || role === 'VERIFIER') channels.push(channelForScope('admin'));
+  if (agencyId) channels.push(channelForScope(`agency:${agencyId}`));
+  return channels;
+}
+
+async function sendInvalidation(channelName: string, topics: string[]): Promise<void> {
+  const supabase = getClient();
+  const channel = supabase.channel(channelName, { config: { private: false } });
+  try {
+    const result = await channel.httpSend('invalidate', { topics });
+    if (!result.success) {
+      logger.warn('[realtime] Supabase broadcast was not acknowledged', {
+        channel: channelName,
+        result,
+      });
     }
-  });
-
-  io.on('connection', (socket) => {
-    const { role, agencyId } = socket.data as SocketData;
-    if (role === 'ADMIN' || role === 'VERIFIER') socket.join('admin');
-    if (agencyId) socket.join(`agency:${agencyId}`);
-  });
-
-  logger.info('Realtime (Socket.IO) initialized');
+  } catch (error) {
+    logger.warn('[realtime] Supabase broadcast failed', {
+      channel: channelName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    await supabase.removeChannel(channel).catch(() => undefined);
+  }
 }
 
 /**
- * Signals that the named topics changed. Always reaches admins; also reaches a
- * specific agency's users when `agencyId` is given. No-op if realtime isn't
- * initialised (e.g. in tests).
+ * Sends lightweight cache-invalidation topics through Supabase Broadcast.
+ * Channel names are HMAC-derived capabilities returned only by an authenticated
+ * API route, so one agency cannot guess another agency's channel.
  */
-export function broadcast(topics: string[], opts: { agencyId?: string | null } = {}): void {
-  if (!io) return;
-  const payload = { topics };
-  io.to('admin').emit('invalidate', payload);
-  if (opts.agencyId) io.to(`agency:${opts.agencyId}`).emit('invalidate', payload);
+export async function broadcast(
+  topics: string[],
+  opts: { agencyId?: string | null } = {},
+): Promise<void> {
+  if (!isRealtimeEnabled()) return;
+
+  const channels = [channelForScope('admin')];
+  if (opts.agencyId) channels.push(channelForScope(`agency:${opts.agencyId}`));
+  await Promise.all(channels.map((channel) => sendInvalidation(channel, topics)));
 }

@@ -26,7 +26,7 @@ The portal itself owns: agencies, agents, users, onboarding applications, verifi
 - **Cache:** Redis
 - **File Storage:** AWS S3 (or Supabase Storage if self-contained) with encryption at rest
 - **Verification Provider:** Digio (GST, PAN, Aadhaar, Bank Verification, eSign)
-- **Real-time:** Socket.IO
+- **Real-time:** Supabase Broadcast (serverless-safe cache invalidation)
 - **Email:** Resend
 - **SMS/OTP:** MSG91
 - **Logging:** Winston + Morgan
@@ -36,7 +36,7 @@ The portal itself owns: agencies, agents, users, onboarding applications, verifi
 - **CI/CD:** GitHub Actions
 - **Containerization:** Docker + Docker Compose
 - **Monitoring:** Sentry + Prometheus + Grafana
-- **Deployment:** AWS (EC2/ECS + RDS + S3 + CloudFront) or Render (Development)
+- **Deployment:** One Vercel project (React CDN assets + Express Function) with Supabase data services
 
 ---
 

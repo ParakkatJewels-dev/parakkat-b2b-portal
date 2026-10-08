@@ -1,3 +1,4 @@
+import path from 'node:path';
 import express, { type Express } from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
@@ -31,8 +32,16 @@ import { bookingRouter } from './modules/booking/booking.routes';
 import { financeRouter } from './modules/finance/finance.routes';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { reportsRouter } from './modules/reports/reports.routes';
+import { loadSettings } from './modules/settings/settings.service';
+import { cronRouter } from './modules/cron/cron.routes';
+import { realtimeRouter } from './modules/realtime/realtime.routes';
 
-export function createApp(): Express {
+export interface CreateAppOptions {
+  clientDistDir?: string;
+  loadSettingsOnRequest?: boolean;
+}
+
+export function createApp(options: CreateAppOptions = {}): Express {
   const app = express();
 
   app.disable('x-powered-by');
@@ -72,11 +81,43 @@ export function createApp(): Express {
   app.use(cookieParser());
   app.use(correlationIdMiddleware);
   app.use(requestLogger);
+
+  if (options.loadSettingsOnRequest) {
+    const settingsRefreshMs = 30_000;
+    let settingsReady: Promise<void> | undefined;
+    let settingsLoadedAt = 0;
+    app.use((req, _res, next) => {
+      if (!req.path.startsWith('/api/') || req.path === '/api/health/live') {
+        next();
+        return;
+      }
+
+      if (!settingsReady && Date.now() - settingsLoadedAt >= settingsRefreshMs) {
+        settingsReady = loadSettings()
+          .then(() => {
+            settingsLoadedAt = Date.now();
+          })
+          .finally(() => {
+            settingsReady = undefined;
+          });
+      }
+
+      const currentLoad = settingsReady;
+      if (currentLoad) {
+        void currentLoad.then(() => next(), next);
+      } else {
+        next();
+      }
+    });
+  }
+
   app.use(generalLimiter);
 
   mountSwagger(app);
 
   app.use('/api/health', healthRouter);
+  app.use('/api/cron', cronRouter);
+  app.use('/api/realtime', realtimeRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/onboarding', onboardingRouter);
@@ -99,6 +140,17 @@ export function createApp(): Express {
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/audit-logs', auditRouter);
+
+  if (options.clientDistDir) {
+    app.use(express.static(options.clientDistDir));
+    app.get('*', (req, res, next) => {
+      if (req.path === '/api' || req.path.startsWith('/api/') || !req.accepts('html')) {
+        next();
+        return;
+      }
+      res.sendFile(path.join(options.clientDistDir!, 'index.html'));
+    });
+  }
 
   app.use(notFound);
   app.use(errorHandler);

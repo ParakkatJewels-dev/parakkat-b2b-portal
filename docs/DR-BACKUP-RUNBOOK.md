@@ -30,8 +30,8 @@ never rotate it without a re-encryption migration.
 | Restore drill cadence | **Quarterly** | Proves the runbook actually works |
 
 Ratify these with the business (finance's tolerance for lost bookings drives RPO). The current
-architecture is **single-region, single API instance** (in-memory Socket.IO adapter — see
-`docs/RUNBOOK.md`), so DR is *restore-and-redeploy*, not hot-standby failover. If the business needs a
+architecture is **single-region managed compute** with Supabase Realtime (see `docs/RUNBOOK.md`),
+so DR is *restore-and-redeploy*, not hot-standby failover. If the business needs a
 lower RTO, that is a **decision to add a read-replica/multi-region topology** — call it out, don't
 assume it.
 

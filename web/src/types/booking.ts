@@ -55,10 +55,14 @@ export interface Booking {
   nights: number;
   guests: number;
   agencyPrice: string;
+  // B2B resale layer — agent's markup snapshot and customer-facing sell price
+  // (null on bookings made before the feature existed).
+  resaleMarkupPct?: string | null;
+  sellPrice?: string | null;
   paymentMode: 'PREPAY' | 'CREDIT';
   state: BookingState;
   holdExpiresAt: string | null;
-  axisRoomsRef: string | null;
+  crsBookingRef: string | null;
   createdAt: string;
   // v3 §8 — guest data (ID masked: only last-4 retained).
   leadGuestName?: string | null;

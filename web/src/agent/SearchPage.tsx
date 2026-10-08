@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 import { Badge, Button, Field, Input, PageHeader, Select, inr } from '../components/ui/kit';
 import { Icons } from '../components/layout/icons';
 import * as bookingApi from '../api/booking.api';
+import * as agencyApi from '../api/agency.api';
 import type { BrowseRoom } from '../api/booking.api';
 import type { PricedRoomType, RatePlan } from '../types/booking';
 
@@ -102,6 +103,15 @@ export function SearchPage() {
   const [result, setResult] = useState<bookingApi.GroupBookingResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // B2B resale layer — the agency default prefills the control; typing a value
+  // overrides it for this booking only (empty = use the default).
+  const { data: resaleDefault } = useQuery({ queryKey: ['resale-markup'], queryFn: agencyApi.getResaleMarkup });
+  const [resalePctInput, setResalePctInput] = useState('');
+  const defaultResalePct = Number(resaleDefault?.defaultResaleMarkupPct ?? 0);
+  const parsedOverride = resalePctInput.trim() === '' ? null : Number(resalePctInput);
+  const overrideValid = parsedOverride === null || (Number.isFinite(parsedOverride) && parsedOverride >= 0 && parsedOverride <= 500);
+  const effectiveResalePct = overrideValid && parsedOverride !== null ? parsedOverride : defaultResalePct;
 
   // Occupancy counters popover state
   const [showOccPopover, setShowOccPopover] = useState(false);
@@ -472,7 +482,7 @@ export function SearchPage() {
     try {
       const guestPayload = { name: guest.name, phone: guest.phone, email: guest.email, idType: guest.idType || undefined, idNumber: guest.idNumber || undefined };
       const res = await bookingApi.createGroupBooking(
-        cart.map((l) => ({ resortId: l.resortId, roomTypeId: l.roomTypeId, checkIn: l.checkIn, checkOut: l.stayType === 'DAY_USE' ? undefined : l.checkOut, stayType: l.stayType, guests: l.adults + l.children, adults: l.adults, children: l.children, childAges: l.childAges.length ? l.childAges : undefined, extraBeds: l.extraBeds, plan: l.plan, guest: guestPayload })),
+        cart.map((l) => ({ resortId: l.resortId, roomTypeId: l.roomTypeId, checkIn: l.checkIn, checkOut: l.stayType === 'DAY_USE' ? undefined : l.checkOut, stayType: l.stayType, guests: l.adults + l.children, adults: l.adults, children: l.children, childAges: l.childAges.length ? l.childAges : undefined, extraBeds: l.extraBeds, plan: l.plan, resaleMarkupPct: overrideValid && parsedOverride !== null ? parsedOverride : undefined, guest: guestPayload })),
       );
       setResult(res);
       setCart([]);
@@ -502,6 +512,7 @@ export function SearchPage() {
     setIsCartOpen(false);
     setResult(null);
     setGuest({ name: '', phone: '', email: '', idType: '', idNumber: '' });
+    setResalePctInput('');
     setError(null);
   }
 
@@ -527,7 +538,7 @@ export function SearchPage() {
                 {awaitingPayment ? 'Booking Held Successfully' : 'Booking Confirmed!'}
               </h3>
               <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1 leading-relaxed">
-                {awaitingPayment ? 'Rooms held. Please pay to finalize reservation.' : 'All bookings pushed directly to AxisRooms.'}
+                {awaitingPayment ? 'Rooms held. Please pay to finalize reservation.' : 'All bookings pushed directly to CRS.'}
               </p>
             </div>
 
@@ -539,7 +550,7 @@ export function SearchPage() {
                     <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">{b.roomTypeName}</div>
                     <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
                       {b.ratePlan} · {b.checkIn.slice(0, 10)} → {b.checkOut.slice(0, 10)}
-                      {b.axisRoomsRef && ` · Ref: ${b.axisRoomsRef}`}
+                      {b.crsBookingRef && ` · Ref: ${b.crsBookingRef}`}
                     </div>
                   </div>
                   <div className="font-bold text-slate-700 dark:text-slate-350 shrink-0">{inr(Number(b.agencyPrice))}</div>
@@ -606,6 +617,40 @@ export function SearchPage() {
             <div className="flex items-center justify-between rounded-xl bg-slate-100 dark:bg-slate-950 px-4 py-3 text-xs font-bold text-slate-800 dark:text-slate-200 border border-slate-150 dark:border-slate-800/40">
               <span>Total Price</span>
               <span className="text-sm font-extrabold text-blue-600 dark:text-blue-400">{inr(cartTotal)}</span>
+            </div>
+
+            {/* B2B resale layer — the agent's own markup and profit preview. */}
+            <div className="rounded-xl border border-slate-150 dark:border-slate-800/40 bg-slate-50/70 dark:bg-slate-900/40 px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-450 dark:text-slate-500">Your Markup</span>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={500}
+                    step="0.5"
+                    value={resalePctInput}
+                    onChange={(e) => setResalePctInput(e.target.value)}
+                    placeholder={String(defaultResalePct)}
+                    className="w-20 py-1 text-xs text-right rounded-lg"
+                  />
+                  <span className="text-xs font-bold text-slate-500">%</span>
+                </div>
+              </div>
+              {!overrideValid && (
+                <div className="text-[10px] text-red-500 font-medium">Markup must be between 0 and 500.</div>
+              )}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 dark:text-slate-400">Customer price</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{inr(cartTotal * (1 + effectiveResalePct / 100))}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 dark:text-slate-400">Your profit</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">{inr(cartTotal * (effectiveResalePct / 100))}</span>
+              </div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
+                You pay the total price above; your customer pays the customer price. Blank = agency default ({defaultResalePct}%).
+              </div>
             </div>
 
             <div className="border-t border-slate-150 dark:border-slate-800 pt-3">

@@ -98,7 +98,7 @@ The highest-impact bugs here are **logic**, not classic web vulns:
 
 | Item | Status | Verify |
 |---|---|---|
-| HTTPS everywhere; HSTS | [DECIDE] | Enforced at the platform/edge (Render/Vercel) |
+| HTTPS everywhere; HSTS | [DECIDE] | Enforced at the Vercel platform edge |
 | CORS allow-list (`CORS_ORIGIN`) | ✓ built | Only the web origin; not `*`; credentials handling correct |
 | Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) | [GAP] verify | Confirm a helmet-style header set is applied at the API/edge; add CSP for the SPA |
 | Cookie flags in production | ✓ built | `Secure` on in prod; `SameSite=strict`; scoped path |

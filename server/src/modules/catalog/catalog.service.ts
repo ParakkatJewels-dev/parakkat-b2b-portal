@@ -1,9 +1,9 @@
 import type { RatePlanCode } from '@prisma/client';
 import { env } from '../../config/env';
 import { prisma } from '../../lib/prisma';
-import { getAxisRooms } from '../../lib/axisrooms';
-import type { OccupancyConfig, Resort, Restrictions, RoomTypeAvailability, RoomTypeRates } from '../../lib/axisrooms';
-import { TtlCache } from '../../lib/axisrooms/cache';
+import { getInventoryClient } from '../../lib/inventory';
+import type { OccupancyConfig, Resort, Restrictions, RoomTypeAvailability, RoomTypeRates } from '../../lib/inventory';
+import { TtlCache } from '../../lib/inventory/cache';
 import { ApiError } from '../../utils/apiError';
 import { validateStayDates } from '../booking/dates';
 import { pricePlansFromAxis, priceDayUseFromAxis, type ComposedCharge } from '../pricing/pricing.service';
@@ -18,7 +18,7 @@ const availabilityCache = new TtlCache<RoomTypeAvailability[]>(
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 export async function listResorts(): Promise<Resort[]> {
-  return getAxisRooms().listResorts();
+  return getInventoryClient().listResorts();
 }
 
 export interface BrowseRoom {
@@ -28,16 +28,16 @@ export interface BrowseRoom {
   roomTypeId: string;
   roomTypeName: string;
   maxOccupancy: number;
-  /** Indicative "from" agency price per night (AxisRooms base × agency markup, EP).
+  /** Indicative "from" agency price per night (CRS base × agency markup, EP).
    *  The exact price is resolved once dates + occupancy + plan are chosen. */
   indicativePricePerNight: number;
 }
 
 /**
  * Dateless catalog browse (per the room-first flow): every resort's room types
- * from AxisRooms with an indicative from-price, so agents can browse before
+ * from CRS with an indicative from-price, so agents can browse before
  * picking dates. Availability is NOT asserted here — it is verified per-date
- * against both AxisRooms and the portal channel policy at the next step
+ * against both CRS and the portal channel policy at the next step
  * (searchAvailability) and again at commit.
  */
 export async function browseRooms(agencyId: string): Promise<BrowseRoom[]> {
@@ -45,7 +45,7 @@ export async function browseRooms(agencyId: string): Promise<BrowseRoom[]> {
   if (!config) throw ApiError.conflict('Agency has no commercial configuration');
   const markupPct = Number(config.markupPct);
 
-  const axis = getAxisRooms();
+  const axis = getInventoryClient();
   const resorts = await axis.listResorts();
   const perResort = await Promise.all(resorts.map((r) => axis.listRoomTypes(r.id)));
 
@@ -121,17 +121,17 @@ export async function searchAvailability(
   const key = `${query.resortId}:${query.checkIn}:${checkOutStr}:${stayType}:${guests}`;
   let rooms = availabilityCache.get(key);
   if (!rooms) {
-    rooms = await getAxisRooms().searchAvailability({ resortId: query.resortId, checkIn: query.checkIn, checkOut: checkOutStr, stayType, guests });
+    rooms = await getInventoryClient().searchAvailability({ resortId: query.resortId, checkIn: query.checkIn, checkOut: checkOutStr, stayType, guests });
     availabilityCache.set(key, rooms);
   }
 
   // v3 §3 — apply the B2B channel policy (stop-sell / caps / allotments) to the
-  // live AxisRooms availability before display. Per-agency, so applied post-cache.
+  // live CRS availability before display. Per-agency, so applied post-cache.
   rooms = await applyChannelPolicy(query.resortId, rooms, checkInDate, checkOutDate, agencyId);
 
   const results: PricedRoomType[] = [];
   for (const rt of rooms) {
-    // v4 §1 — rate plans, occupancy and restrictions come from AxisRooms. The
+    // v4 §1 — rate plans, occupancy and restrictions come from CRS. The
     // enriched availability read carries them; fall back to a dated rates read.
     const rates: RoomTypeRates | null =
       rt.ratePlans && rt.occupancy
@@ -143,7 +143,7 @@ export async function searchAvailability(
             restrictions: rt.restrictions ?? { minNights: 1, closedToArrival: false, closedToDeparture: false, stopSell: false },
             dayUse: rt.dayUse,
           }
-        : await getAxisRooms().getRoomTypeRates({
+        : await getInventoryClient().getRoomTypeRates({
             resortId: query.resortId,
             roomTypeId: rt.roomTypeId,
             checkIn: query.checkIn,
@@ -190,9 +190,9 @@ export async function searchAvailability(
   return results;
 }
 
-// --- Admin read-through of AxisRooms rates/restrictions (v4 §1) ---------------
-// AxisRooms is the source of truth for rate plans, occupancy and restrictions.
-// This gives Admin a read-only window into what AxisRooms serves for a resort +
+// --- Admin read-through of CRS rates/restrictions (v4 §1) ---------------
+// CRS is the source of truth for rate plans, occupancy and restrictions.
+// This gives Admin a read-only window into what CRS serves for a resort +
 // date range (NET rates, before the per-agency markup the portal applies).
 
 export interface AxisRatesRoom {
@@ -221,9 +221,9 @@ export interface AdminCatalogResort {
   rooms: { roomTypeId: string; roomTypeName: string; maxOccupancy: number; baseRatePerNight: number; dayUseRate: number | null }[];
 }
 
-/** Admin read-only catalog: every AxisRooms resort with its room types (source of truth). */
+/** Admin read-only catalog: every CRS resort with its room types (source of truth). */
 export async function getAdminCatalog(): Promise<{ resorts: AdminCatalogResort[] }> {
-  const axis = getAxisRooms();
+  const axis = getInventoryClient();
   const resorts = await axis.listResorts();
   const out: AdminCatalogResort[] = [];
   for (const r of resorts) {
@@ -246,7 +246,7 @@ export async function getAdminCatalog(): Promise<{ resorts: AdminCatalogResort[]
 }
 
 export async function getAxisRatesOverview(resortId: string | undefined, checkIn: string, checkOut: string): Promise<AxisRatesOverview> {
-  const axis = getAxisRooms();
+  const axis = getInventoryClient();
   const resorts = await axis.listResorts();
   const effectiveResortId = resortId ?? resorts[0]?.id;
   if (!effectiveResortId) return { resorts, resortId: '', rooms: [] };

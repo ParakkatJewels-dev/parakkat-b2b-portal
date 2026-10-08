@@ -1,17 +1,16 @@
-import http from 'node:http';
+import path from 'node:path';
 import { env } from './config';
 import { createApp } from './app';
 import { logger } from './lib/logger';
 import { prisma } from './lib/prisma';
-import { initRealtime } from './lib/realtime';
 import { startScheduler, stopScheduler } from './lib/scheduler';
 import { loadSettings } from './modules/settings/settings.service';
 
-const app = createApp();
-const server = http.createServer(app);
-initRealtime(server);
+const clientDistDir =
+  env.NODE_ENV === 'production' ? path.resolve(__dirname, '../../public') : undefined;
+const app = createApp({ clientDistDir });
 
-server.listen(env.PORT, () => {
+const server = app.listen(env.PORT, () => {
   logger.info(`API listening on port ${env.PORT} (${env.NODE_ENV})`);
   // Prime the settings cache (company profile, maintenance flag, booking window)
   // so hot paths read persisted values without a per-request DB hit.
@@ -20,7 +19,11 @@ server.listen(env.PORT, () => {
   startScheduler();
 });
 
+let shuttingDown = false;
+
 async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
   logger.info(`Received ${signal}, shutting down gracefully...`);
   stopScheduler();
   server.close(async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { composeFromNightly, priceRoomFromAxis, pricePlansFromAxis, priceDayUseFromAxis } from '../../../src/modules/pricing/pricing.service';
-import type { RoomTypeRates } from '../../../src/lib/axisrooms/axisrooms.types';
+import type { RoomTypeRates } from '../../../src/lib/inventory/inventory.types';
 
 const cfg = {
   baseOccupancy: 2,
@@ -14,7 +14,7 @@ const cfg = {
 
 const occ2 = { adults: 2, children: 0, extraBeds: 0 };
 
-describe('composeFromNightly (AxisRooms-sourced pricing)', () => {
+describe('composeFromNightly (CRS-sourced pricing)', () => {
   it('sums per-date net rates and applies a single markup', () => {
     // spec example: 4500 base × 1 night, 10% → 4950
     const c = composeFromNightly([4500], 'EP', cfg, occ2, 10);

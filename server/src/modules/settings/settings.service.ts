@@ -56,17 +56,20 @@ export interface AllSettings {
 export type SettingsGroup = keyof AllSettings;
 
 const DEFAULTS: AllSettings = {
+  // GSTIN/phone/URLs default EMPTY — never ship fabricated identifiers. The
+  // admin fills the real values in System Settings; documents and UI skip
+  // empty fields.
   company: {
     name: 'Parakkat Resorts & Holidays',
     addressLine1: 'Parakkat Nature Resort',
     addressLine2: 'Munnar, Idukki, Kerala 685612, India',
-    gstin: '32AABCP1234A1Z2',
+    gstin: '',
     email: 'support@parakkatjewels.com',
-    phone: '+91 98470 00000',
-    website: 'https://www.parakkatresorts.com',
+    phone: '',
+    website: '',
   },
   financial: {
-    gstNumber: '32AABCP1234A1Z2',
+    gstNumber: '',
     defaultGstRate: 18,
     currency: 'INR',
     invoiceNumberFormat: 'INV-{YYYY}{MM}-{RAND}',
@@ -78,8 +81,8 @@ const DEFAULTS: AllSettings = {
   },
   portal: {
     maintenanceMode: false,
-    termsUrl: 'https://parakkat.com/terms',
-    privacyUrl: 'https://parakkat.com/privacy',
+    termsUrl: '',
+    privacyUrl: '',
   },
   // Safe baseline: master switch off ⇒ password-only logins (demo-friendly), and
   // every per-role enforcement starts OFF so turning the master switch on never

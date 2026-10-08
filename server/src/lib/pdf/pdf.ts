@@ -49,14 +49,17 @@ export interface CompanyProfile {
   website: string;
 }
 
-/** Page header: company identity on the left, document title/meta on the right. */
+/** Page header: company identity on the left, document title/meta on the right.
+ *  Empty identity fields are skipped — a document must never carry a fabricated
+ *  GSTIN or phone just to fill the line. */
 export function drawHeader(doc: PDFKit.PDFDocument, company: CompanyProfile, title: string, subtitle?: string): void {
   const top = doc.y;
   doc.fillColor(BRAND).fontSize(20).font('Helvetica-Bold').text(company.name, 48, top);
   doc.fillColor(MUTED).fontSize(8).font('Helvetica');
   company.addressLines.forEach((l) => doc.text(l));
-  doc.text(`GSTIN: ${company.gstin}`);
-  doc.text(`${company.email}  ·  ${company.phone}`);
+  if (company.gstin) doc.text(`GSTIN: ${company.gstin}`);
+  const contact = [company.email, company.phone].filter(Boolean).join('  ·  ');
+  if (contact) doc.text(contact);
 
   doc.fillColor(INK).fontSize(18).font('Helvetica-Bold').text(title, 320, top, { width: 227, align: 'right' });
   if (subtitle) doc.fillColor(MUTED).fontSize(9).font('Helvetica').text(subtitle, 320, doc.y + 2, { width: 227, align: 'right' });

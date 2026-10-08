@@ -204,7 +204,7 @@ financeRouter.post(
 /**
  * @openapi
  * /finance/reconciliation:
- *   get: { summary: Drift report across portal / AxisRooms / CRS (ADMIN), tags: [Finance], security: [{ bearerAuth: [] }] }
+ *   get: { summary: Drift report across portal / CRS / CRS (ADMIN), tags: [Finance], security: [{ bearerAuth: [] }] }
  */
 financeRouter.get('/reconciliation', authenticate, requireRole('ADMIN'), asyncHandler(financeController.reconciliation));
 

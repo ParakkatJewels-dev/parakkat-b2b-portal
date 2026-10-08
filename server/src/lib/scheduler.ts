@@ -22,24 +22,37 @@ interface Job {
   run: () => Promise<unknown>;
 }
 
+export interface JobRunResult {
+  name: string;
+  status: 'completed' | 'failed' | 'skipped';
+  durationMs: number;
+  result?: unknown;
+  error?: string;
+}
+
 let timers: NodeJS.Timeout[] = [];
 const running = new Set<string>();
 
-async function tick(job: Job): Promise<void> {
+async function tick(job: Job): Promise<JobRunResult> {
   if (running.has(job.name)) {
     logger.warn(`[scheduler] ${job.name} still running from a previous tick; skipping`);
-    return;
+    return { name: job.name, status: 'skipped', durationMs: 0 };
   }
   running.add(job.name);
   const startedAt = Date.now();
   try {
     const result = await job.run();
-    logger.info(`[scheduler] ${job.name} completed`, { ms: Date.now() - startedAt, result });
+    const durationMs = Date.now() - startedAt;
+    logger.info(`[scheduler] ${job.name} completed`, { ms: durationMs, result });
+    return { name: job.name, status: 'completed', durationMs, result };
   } catch (err) {
+    const durationMs = Date.now() - startedAt;
+    const error = err instanceof Error ? err.message : String(err);
     logger.error(`[scheduler] ${job.name} failed`, {
-      ms: Date.now() - startedAt,
-      error: err instanceof Error ? err.message : String(err),
+      ms: durationMs,
+      error,
     });
+    return { name: job.name, status: 'failed', durationMs, error };
   } finally {
     running.delete(job.name);
   }
@@ -59,6 +72,44 @@ async function resolveSystemActor(): Promise<{ actorId: string; actorRole: 'SYST
   return admin ? { actorId: admin.id, actorRole: 'SYSTEM' } : null;
 }
 
+const maintenanceJobs: Job[] = [
+  {
+    name: 'hold-sweep',
+    intervalMs: env.HOLD_SWEEP_INTERVAL_SECONDS * 1000,
+    run: () => expireStaleHolds(),
+  },
+  {
+    name: 'crs-outbox-flush',
+    intervalMs: env.CRS_FLUSH_INTERVAL_SECONDS * 1000,
+    run: () => flushOutbox(),
+  },
+  {
+    name: 'rebook-queue',
+    intervalMs: env.REBOOK_QUEUE_INTERVAL_SECONDS * 1000,
+    run: () => processRebookQueue(),
+  },
+];
+
+const dunningJob: Job = {
+  name: 'dunning',
+  intervalMs: env.DUNNING_INTERVAL_SECONDS * 1000,
+  run: async () => {
+    const actor = await resolveSystemActor();
+    if (!actor) return { skipped: 'no ADMIN user to attribute the run to' };
+    return runDunning(actor);
+  },
+};
+
+export async function runMaintenanceJobs(): Promise<JobRunResult[]> {
+  const results: JobRunResult[] = [];
+  for (const job of maintenanceJobs) results.push(await tick(job));
+  return results;
+}
+
+export function runDunningJob(): Promise<JobRunResult> {
+  return tick(dunningJob);
+}
+
 export function startScheduler(): void {
   if (env.NODE_ENV === 'test') return;
   if (!env.SCHEDULER_ENABLED) {
@@ -66,22 +117,7 @@ export function startScheduler(): void {
     return;
   }
 
-  const jobs: Job[] = [
-    { name: 'hold-sweep', intervalMs: env.HOLD_SWEEP_INTERVAL_SECONDS * 1000, run: () => expireStaleHolds() },
-    { name: 'crs-outbox-flush', intervalMs: env.CRS_FLUSH_INTERVAL_SECONDS * 1000, run: () => flushOutbox() },
-    { name: 'rebook-queue', intervalMs: env.REBOOK_QUEUE_INTERVAL_SECONDS * 1000, run: () => processRebookQueue() },
-    {
-      name: 'dunning',
-      intervalMs: env.DUNNING_INTERVAL_SECONDS * 1000,
-      run: async () => {
-        const actor = await resolveSystemActor();
-        if (!actor) return { skipped: 'no ADMIN user to attribute the run to' };
-        return runDunning(actor);
-      },
-    },
-  ];
-
-  for (const job of jobs) {
+  for (const job of [...maintenanceJobs, dunningJob]) {
     const timer = setInterval(() => void tick(job), job.intervalMs);
     timer.unref();
     timers.push(timer);

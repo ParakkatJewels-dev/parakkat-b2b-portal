@@ -152,7 +152,7 @@ export async function processWebhook(payload: DigioWebhookPayload): Promise<Webh
 
   await evaluateAutoProgression(verification.applicationId);
   // A check result changes the admin queue/detail even without a transition.
-  broadcast(['applications']);
+  await broadcast(['applications']);
   return { outcome: 'applied' };
 }
 

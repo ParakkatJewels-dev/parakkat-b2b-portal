@@ -193,6 +193,9 @@ export async function collectPaymentForBooking(booking: Booking): Promise<Invoic
         amount: booking.agencyPrice,
         direction: 'INBOUND',
         status: 'SUCCEEDED',
+        // Record which gateway actually captured this (mock in dev) instead of
+        // relying on the schema's historical "airpay" default.
+        gateway: env.PAYMENT_PROVIDER,
         gatewayRef: capture.gatewayRef,
         completedAt: new Date(),
       },
@@ -259,6 +262,7 @@ export async function applyCancellation(
               amount: outcome.refundAmount,
               direction: 'OUTBOUND',
               status: 'SUCCEEDED',
+              gateway: env.PAYMENT_PROVIDER,
               gatewayRef: refundRef,
               completedAt: new Date(),
             },
@@ -358,6 +362,7 @@ export async function settleInvoice(invoiceId: string, agencyId: string, amount?
         amount: pay,
         direction: 'INBOUND',
         status: 'SUCCEEDED',
+        gateway: env.PAYMENT_PROVIDER,
         gatewayRef: capture.gatewayRef,
         completedAt: new Date(),
       },
@@ -386,7 +391,7 @@ export async function settleInvoice(invoiceId: string, agencyId: string, amount?
     );
   }
   await flushInline();
-  broadcast(['finance'], { agencyId });
+  await broadcast(['finance'], { agencyId });
   return paid;
 }
 
@@ -424,6 +429,8 @@ export async function recordChargeback(
         amount,
         direction: 'OUTBOUND',
         status: 'CHARGEBACK',
+        // A chargeback reverses the ORIGINAL payment — carry its gateway.
+        gateway: original.gateway,
         gatewayRef: original.gatewayRef,
         completedAt: new Date(),
       },
@@ -465,7 +472,7 @@ export async function recordChargeback(
     );
   }
   await flushInline();
-  broadcast(['finance'], { agencyId: original.agencyId });
+  await broadcast(['finance'], { agencyId: original.agencyId });
   return chargeback;
 }
 
@@ -748,7 +755,7 @@ export async function recordOfflineSettlement(
     );
   }
   await flushInline();
-  broadcast(['finance'], { agencyId: input.agencyId });
+  await broadcast(['finance'], { agencyId: input.agencyId });
 
   return { applied, advanceRecorded, allocations, balance: await getSettlementBalance(input.agencyId) };
 }
@@ -851,7 +858,7 @@ export async function applyAgencyAdvance(
     after: { applied: appliedTotal },
   });
   await flushInline();
-  broadcast(['finance'], { agencyId });
+  await broadcast(['finance'], { agencyId });
 
   return { applied: appliedTotal, balance: await getSettlementBalance(agencyId) };
 }
@@ -898,7 +905,7 @@ export async function listInvoices(agencyId: string, page: number, pageSize: num
   return { items, total, page, pageSize };
 }
 
-/** Admin — CRS outbox status: event counts + recent events (AxisRooms/CRS sync visibility). */
+/** Admin — CRS outbox status: event counts + recent events (CRS/CRS sync visibility). */
 export async function getCrsStatus() {
   const [pending, sent, failed, events] = await Promise.all([
     prisma.crsOutboxEvent.count({ where: { status: 'PENDING' } }),

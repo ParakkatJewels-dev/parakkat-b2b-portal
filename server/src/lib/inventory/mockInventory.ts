@@ -3,7 +3,7 @@ import { env } from '../../config/env';
 import { logger } from '../logger';
 import type {
   AvailabilityQuery,
-  AxisRoomsClient,
+  InventoryClient,
   CreateReservationInput,
   CreateReservationResult,
   DailyRate,
@@ -15,7 +15,7 @@ import type {
   Restrictions,
   RoomTypeAvailability,
   RoomTypeRates,
-} from './axisrooms.types';
+} from './inventory.types';
 
 interface MockRoomType {
   resortId: string;
@@ -118,17 +118,17 @@ function toAvailability(rt: MockRoomType, range?: { checkIn: string; checkOut: s
 }
 
 /**
- * In-memory AxisRooms stand-in for dev/test. Availability, rate plans (EP/CP/MAP/AP
+ * In-memory CRS stand-in for dev/test. Availability, rate plans (EP/CP/MAP/AP
  * with per-date net rates), occupancy config, restrictions and day-use are served
  * so the portal's markup + booking pipeline can run end-to-end without the live API.
  * Reservations are tracked by correlationId so writes are idempotent. Downtime can be
- * simulated with AXISROOMS_FORCE_DOWN=true to exercise the block-don't-queue path.
+ * simulated with INVENTORY_FORCE_DOWN=true to exercise the block-don't-queue path.
  */
-export class MockAxisRoomsClient implements AxisRoomsClient {
-  private reservations = new Map<string, string>(); // correlationId -> axisRoomsRef
+export class MockInventoryClient implements InventoryClient {
+  private reservations = new Map<string, string>(); // correlationId -> crsBookingRef
 
   async healthCheck(): Promise<boolean> {
-    return !env.AXISROOMS_FORCE_DOWN;
+    return !env.INVENTORY_FORCE_DOWN;
   }
 
   async listResorts(): Promise<Resort[]> {
@@ -169,23 +169,23 @@ export class MockAxisRoomsClient implements AxisRoomsClient {
   async createReservation(input: CreateReservationInput): Promise<CreateReservationResult> {
     const existing = this.reservations.get(input.correlationId);
     if (existing) {
-      return { axisRoomsRef: existing }; // idempotent
+      return { crsBookingRef: existing }; // idempotent
     }
-    const axisRoomsRef = `AXR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-    this.reservations.set(input.correlationId, axisRoomsRef);
-    logger.info('[MockAxisRooms] reservation created', {
+    const crsBookingRef = `RSV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    this.reservations.set(input.correlationId, crsBookingRef);
+    logger.info('[MockCRS] reservation created', {
       correlationId: input.correlationId,
-      axisRoomsRef,
+      crsBookingRef,
       stayType: input.stayType ?? 'OVERNIGHT',
       rooms: input.rooms?.length ?? 1,
     });
-    return { axisRoomsRef };
+    return { crsBookingRef };
   }
 
-  async cancelReservation(axisRoomsRef: string): Promise<void> {
+  async cancelReservation(crsBookingRef: string): Promise<void> {
     for (const [key, ref] of this.reservations.entries()) {
-      if (ref === axisRoomsRef) this.reservations.delete(key);
+      if (ref === crsBookingRef) this.reservations.delete(key);
     }
-    logger.info('[MockAxisRooms] reservation cancelled', { axisRoomsRef });
+    logger.info('[MockCRS] reservation cancelled', { crsBookingRef });
   }
 }

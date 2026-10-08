@@ -3,7 +3,7 @@
  * portal records only the middle one (agency price) and NEVER the customer
  * price. Computed server-side — a client-supplied price is never trusted.
  *
- *   base rate         → per-night rate from AxisRooms (Decision D1)
+ *   base rate         → per-night rate from CRS (Decision D1)
  *   agency price      = base × (1 + markup%)   ← displayed, booked, owed
  *   customer price    → out of scope, never stored
  */

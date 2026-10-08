@@ -14,7 +14,7 @@ export interface TierPreset {
 // Built-in defaults. Overridable via TIERS_CONFIG_JSON (§16 — presets are
 // configuration, not hardcoded business rules). A prepay tier always implies
 // an effective credit limit of ₹0.
-// Markup % is the portal's hike on the AxisRooms net rate. Top-tier partners get
+// Markup % is the portal's hike on the CRS net rate. Top-tier partners get
 // the keenest price (lowest markup); it rises down the tiers. This is the per-tier
 // *default* — admins can override markupPct per agency ("personal bias").
 const DEFAULT_TIERS: Record<string, TierPreset> = {

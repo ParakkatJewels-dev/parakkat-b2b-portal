@@ -39,7 +39,7 @@ async function main(): Promise<void> {
       currency: 'INR',
       paymentMode: 'PREPAY',
       gatewayRef: 'PAY-SAMPLE01',
-      resortId: 'parakkat-munnar',
+      resortId: 'resort-munnar',
       checkIn: '2026-08-01',
       checkOut: '2026-08-03',
       nights: 2,

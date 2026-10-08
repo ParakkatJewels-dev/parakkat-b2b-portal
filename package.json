@@ -10,12 +10,15 @@
     "node": ">=20"
   },
   "scripts": {
+    "dev": "node scripts/dev.mjs",
     "lint": "npm run lint --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run db:generate --workspace @b2b-portal/server && tsc -p tsconfig.json --noEmit && npm run build --workspaces --if-present",
+    "start": "npm run start --workspace @b2b-portal/server",
     "dev:api": "npm run dev --workspace @b2b-portal/server",
     "dev:web": "npm run dev --workspace @b2b-portal/web",
+    "db:generate": "npm run db:generate --workspace @b2b-portal/server",
     "db:migrate": "npm run db:migrate --workspace @b2b-portal/server",
     "db:migrate:deploy": "npm run db:migrate:deploy --workspace @b2b-portal/server",
     "db:seed": "npm run db:seed --workspace @b2b-portal/server"

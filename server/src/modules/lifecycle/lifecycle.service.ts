@@ -72,6 +72,6 @@ export async function transitionApplication(
   });
 
   // Live-update the admin queue/dashboard.
-  broadcast(['applications']);
+  await broadcast(['applications']);
   return result;
 }

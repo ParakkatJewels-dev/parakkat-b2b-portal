@@ -126,7 +126,7 @@ enum BookingState {
   PAID
   CONFIRMED
   COMMITTED
-  // v3 §5.2 — accepted/paid by the portal but the AxisRooms push failed; funds
+  // v3 §5.2 — accepted/paid by the portal but the upstream (CRS) push failed; funds
   // held, queued for automatic rebook (RebookTask) and manual admin fallback.
   COMMIT_FAILED
   CANCELLED
@@ -136,7 +136,7 @@ enum BookingState {
 // v3 §5.2 — lifecycle of a queued rebook attempt.
 enum RebookTaskStatus {
   PENDING // awaiting (or between) automatic retries
-  RESOLVED // successfully committed to AxisRooms
+  RESOLVED // successfully committed upstream (CRS)
   ABANDONED // exhausted retries — needs manual admin resolution (refund/cancel)
 }
 
@@ -291,6 +291,9 @@ model Agency {
   status        AgencyStatus       @default(ACTIVE)
   contactEmail  String
   contactPhone  String
+  // B2B resale layer: default markup % the agency adds on top of its buy price
+  // (agencyPrice) to make the customer-facing sell price. Overridable per booking.
+  defaultResaleMarkupPct Decimal @default(0) @db.Decimal(5, 2)
   // Set when the agency is activated (agreement eSigned). An agency may exist
   // from the commercial-config step before it can transact; activatedAt != null
   // AND status == ACTIVE is the "operational" gate used by the booking layer.
@@ -431,12 +434,12 @@ model CommercialConfiguration {
 }
 
 // Portal-owned B2B booking record (Instructions.md §12). Resorts/rooms/
-// availability are NOT stored (read from AxisRooms); only the resolved
+// availability are NOT stored (read from the inventory source); only the resolved
 // selection + prices + lifecycle live here. Stores BOTH base rate and resolved
 // agency price so invoices/refunds are reproducible if markup changes (§9).
 model Booking {
   id            String @id @default(uuid())
-  // Shared correlation id carried into AxisRooms and (Phase 7) the CRS.
+  // Shared correlation id carried into the CRS (reservations + finance events).
   correlationId String @unique @default(uuid())
   // v3 §4 — groups the room lines of a multi-room booking (null = standalone).
   groupId       String?
@@ -445,7 +448,7 @@ model Booking {
   agentId       String
   agent         User   @relation("BookingAgent", fields: [agentId], references: [id])
 
-  // AxisRooms references (opaque; no local master tables).
+  // Inventory-source references (opaque; no local master tables).
   resortId     String
   resortName   String
   roomTypeId   String
@@ -456,7 +459,7 @@ model Booking {
   nights   Int
   guests   Int
 
-  // v4 §1 — overnight vs same-day day-use (AxisRooms exposes day-use as a distinct
+  // v4 §1 — overnight vs same-day day-use (the inventory source exposes day-use as a distinct
   // product). DAY_USE bookings have checkIn == checkOut (nights = 0).
   stayType StayType @default(OVERNIGHT)
 
@@ -480,11 +483,16 @@ model Booking {
   baseRate    Decimal     @db.Decimal(14, 2) // total base across the stay
   agencyPrice Decimal     @db.Decimal(14, 2) // base × (1 + markup%)
   markupPct   Decimal     @db.Decimal(5, 2) // snapshot at booking time
+  // B2B resale layer: the agent's own markup on top of agencyPrice, and the
+  // resulting customer-facing sell price. Snapshot at booking time; profit for
+  // the agency = sellPrice − agencyPrice. Nullable for pre-feature bookings.
+  resaleMarkupPct Decimal? @db.Decimal(5, 2)
+  sellPrice       Decimal? @db.Decimal(14, 2)
   paymentMode PaymentMode // resolved branch: CREDIT (on-credit) or PREPAY (pay-first)
 
   state         BookingState @default(DRAFT)
   holdExpiresAt DateTime? // set while AWAITING_PAYMENT (tentative hold TTL)
-  axisRoomsRef  String? // reservation ref once committed to AxisRooms
+  crsBookingRef String? // reservation ref once committed upstream (CRS)
   paidAt        DateTime?
   committedAt   DateTime?
   cancelledAt   DateTime?
@@ -505,7 +513,7 @@ model Booking {
 }
 
 // v3 §3 — stop-sell / blackout and allocation caps for the B2B channel. Read-only
-// policy layer over AxisRooms (never writes to it); filters availability + is
+// policy layer over the inventory source (never writes to it); filters availability + is
 // re-checked at booking commit.
 model ChannelPolicy {
   id         String            @id @default(uuid())
@@ -540,7 +548,7 @@ model Allotment {
 }
 
 // v3 §5.2 — queue of bookings the portal accepted/paid but could not push to
-// AxisRooms. A worker retries the reservation; funds stay held until it either
+// the CRS. A worker retries the reservation; funds stay held until it either
 // commits (RESOLVED) or exhausts retries (ABANDONED → manual admin resolution).
 model RebookTask {
   id          String           @id @default(uuid())

@@ -49,7 +49,7 @@ function Policies() {
       {isLoading ? (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white"><table className="w-full text-sm"><tbody><SkeletonRows rows={4} cols={7} /></tbody></table></div>
       ) : (
-        <DataTable columns={cols} rows={policies} rowKey={(p) => p.id} empty="No stop-sell or cap policies. B2B sees full AxisRooms availability." />
+        <DataTable columns={cols} rows={policies} rowKey={(p) => p.id} empty="No stop-sell or cap policies. B2B sees full CRS availability." />
       )}
       {creating && <PolicyModal onClose={() => setCreating(false)} />}
     </>

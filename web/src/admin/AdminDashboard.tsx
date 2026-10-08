@@ -6,6 +6,8 @@ import { inr } from '../components/dashboard/StatCard';
 import { Donut, TrendChart } from '../components/dashboard/charts';
 import { Icons, type IconName } from '../components/layout/icons';
 import * as dashboardApi from '../api/dashboard.api';
+import * as securityApi from '../api/security.api';
+import * as adminApi from '../api/admin.api';
 import { SkeletonStats, SkeletonChart, SkeletonTable } from '../components/ui/Skeleton';
 import type { AdminSummary, RecentBooking } from '../types/dashboard';
 
@@ -20,7 +22,7 @@ const ACCENT: Record<Accent, string> = {
   rose: 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400',
 };
 
-function Kpi({ label, value, icon, accent, delta, up }: { label: string; value: string; icon: IconName; accent: Accent; delta: string; up: boolean }) {
+function Kpi({ label, value, icon, accent, sub }: { label: string; value: string; icon: IconName; accent: Accent; sub?: string }) {
   const Icon = Icons[icon];
   return (
     <div className="animate-fade-up glass-card rounded-2xl border border-slate-200/50 bg-white/70 p-3.5 sm:p-4.5 md:p-5 dark:border-slate-800/30 dark:bg-slate-900/40 shadow-xs flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
@@ -31,12 +33,7 @@ function Kpi({ label, value, icon, accent, delta, up }: { label: string; value: 
         <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-505">{label}</div>
         <div className="mt-1 text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">{value}</div>
       </div>
-      <div className="mt-2 sm:mt-2.5 flex items-center gap-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-        <span className={up ? 'text-green-600 dark:text-green-400' : 'text-rose-600 dark:text-rose-400'}>
-          {up ? '▲' : '▼'} {delta}
-        </span>
-        <span>vs prev week</span>
-      </div>
+      {sub && <div className="mt-2 sm:mt-2.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">{sub}</div>}
     </div>
   );
 }
@@ -81,30 +78,31 @@ function bookingStatusDonut(data: AdminSummary['bookingsByStatus']) {
   ];
 }
 
-const SYSTEM_STATUS = [
-  { name: 'CRS Synchronization', detail: 'Last sync: 2 mins ago', status: 'Healthy' },
-  { name: 'Airpay Payment Gateway', detail: 'All systems operational', status: 'Healthy' },
-  { name: 'Email Service', detail: 'Last email sent: 1 min ago', status: 'Healthy' },
-  { name: 'SMS Service', detail: 'Last SMS sent: 5 mins ago', status: 'Healthy' },
-  { name: 'WhatsApp Service', detail: 'Last message: 12 mins ago', status: 'Warning' },
-];
-
-const APPROVALS = [
-  { icon: 'agencies' as IconName, kind: 'Agency Registration', name: 'Global Holidays' },
-  { icon: 'shield' as IconName, kind: 'eKYC Verification', name: 'Travel India Pvt Ltd' },
-  { icon: 'finance' as IconName, kind: 'Credit Limit Increase', name: 'Holiday Planners' },
-  { icon: 'sync' as IconName, kind: 'Refund Request', name: 'BK-250515-00110' },
-];
-
 const GRADIENTS = ['from-sky-400 to-blue-500', 'from-emerald-400 to-green-500', 'from-amber-400 to-orange-500', 'from-violet-400 to-purple-500', 'from-rose-400 to-pink-500', 'from-cyan-400 to-teal-500'];
 
+const rangeLabel = (r: '7' | '30' | '90' | 'all') =>
+  r === '7' ? 'last 7 days' : r === '30' ? 'last 30 days' : r === '90' ? 'last 90 days' : 'all time';
+
 export function AdminDashboard() {
-  const [period, setPeriod] = useState<'Daily' | 'Weekly' | 'Monthly'>('Weekly');
   // staleTime + no focus refetch so this heavy summary is fetched once and
   // shared with the sidebar's ['admin-summary'] query (no duplicate requests).
   const { data: rawSummary, isLoading } = useQuery({
     queryKey: ['admin-summary'],
     queryFn: dashboardApi.getAdminSummary,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  // Real integration state (mock vs live per provider) and real pending-review
+  // applications — this panel previously showed fabricated placeholder data.
+  const { data: integrations = [] } = useQuery({
+    queryKey: ['integrations-status'],
+    queryFn: securityApi.getIntegrations,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const { data: pendingApps } = useQuery({
+    queryKey: ['pending-review-apps'],
+    queryFn: () => adminApi.listApplications('REVIEW', 1, 4),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
@@ -167,31 +165,18 @@ export function AdminDashboard() {
 
       {data && (
         <div className="space-y-4 sm:space-y-6">
-          {/* KPI row */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-6">
-            <Kpi label="Total Bookings" value={data.kpis.totalBookings.toLocaleString('en-IN')} icon="bookings" accent="blue" delta="12.5%" up />
-            <Kpi label="Total Revenue" value={inr(data.kpis.totalRevenue)} icon="finance" accent="green" delta="18.3%" up />
-            <Kpi label="Outstanding Credit" value={inr(data.kpis.outstandingAmount)} icon="pricing" accent="amber" delta="9.8%" up={false} />
-            <Kpi label="Pending Payments" value={inr(data.paymentOverview.pending)} icon="reports" accent="violet" delta="7.2%" up={false} />
-            <Kpi label="Active Agencies" value={data.kpis.activeAgencies.toLocaleString('en-IN')} icon="agencies" accent="sky" delta="6.2%" up />
-            <Kpi label="Occupancy Rate" value="68.5%" icon="resorts" accent="rose" delta="4.1%" up />
+          {/* KPI row — real figures only; the selected range is the context. */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-5">
+            <Kpi label="Total Bookings" value={data.kpis.totalBookings.toLocaleString('en-IN')} icon="bookings" accent="blue" sub={rangeLabel(range)} />
+            <Kpi label="Total Revenue" value={inr(data.kpis.totalRevenue)} icon="finance" accent="green" sub={rangeLabel(range)} />
+            <Kpi label="Outstanding Credit" value={inr(data.kpis.outstandingAmount)} icon="pricing" accent="amber" sub="current balance" />
+            <Kpi label="Pending Payments" value={inr(data.paymentOverview.pending)} icon="reports" accent="violet" sub="awaiting settlement" />
+            <Kpi label="Active Agencies" value={data.kpis.activeAgencies.toLocaleString('en-IN')} icon="agencies" accent="sky" sub="currently active" />
           </div>
 
           {/* Row 1: trend + status + recent */}
           <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-4">
-            <Card
-              title="Booking Trend"
-              className="xl:col-span-2"
-              action={
-                <div className="flex rounded-md bg-slate-100 dark:bg-slate-900/60 p-0.5 text-xs">
-                  {(['Daily', 'Weekly', 'Monthly'] as const).map((p) => (
-                    <button key={p} onClick={() => setPeriod(p)} className={`rounded px-2 py-0.5 transition-colors ${period === p ? 'bg-white dark:bg-slate-800 font-semibold text-slate-800 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              }
-            >
+            <Card title="Booking Trend" className="xl:col-span-2">
               <TrendChart data={data.series.map((s) => ({ day: s.day, bookings: s.bookings, value: s.revenue }))} moneyLabel="Revenue (₹)" height={230} />
             </Card>
 
@@ -257,39 +242,47 @@ export function AdminDashboard() {
               />
             </Card>
 
-            <Card title="System Status">
+            <Card title="Integrations" action={<Link to="/admin/integrations" className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">Manage</Link>}>
+              {/* Real runtime state per provider — 'Live' when a real integration
+                  is active, 'Mock' when the dev/test fallback is serving it. */}
               <ul className="space-y-3">
-                {SYSTEM_STATUS.map((s) => (
-                  <li key={s.name} className="flex items-center gap-2">
-                    <span className={`h-2 w-2 shrink-0 rounded-full ${s.status === 'Healthy' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'}`} />
-                    <div className="min-w-0 flex-1 leading-tight">
-                      <div className="truncate text-xs font-semibold text-slate-700 dark:text-slate-300">{s.name}</div>
-                      <div className="truncate text-[11px] text-slate-400 dark:text-slate-500">{s.detail}</div>
-                    </div>
-                    <span className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${s.status === 'Healthy' ? 'bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-450'}`}>{s.status}</span>
-                  </li>
-                ))}
+                {integrations.map((s) => {
+                  const healthy = s.live && s.configured;
+                  const label = healthy ? 'Live' : s.live ? 'Config missing' : 'Mock';
+                  return (
+                    <li key={s.key} className="flex items-center gap-2">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${healthy ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'}`} />
+                      <div className="min-w-0 flex-1 leading-tight">
+                        <div className="truncate text-xs font-semibold text-slate-700 dark:text-slate-300">{s.name}</div>
+                        <div className="truncate text-[11px] text-slate-400 dark:text-slate-500">{s.category} · {s.provider}</div>
+                      </div>
+                      <span className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${healthy ? 'bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-450'}`}>{label}</span>
+                    </li>
+                  );
+                })}
+                {integrations.length === 0 && <li className="text-xs text-slate-400 dark:text-slate-500">Loading integration status…</li>}
               </ul>
             </Card>
           </div>
 
-          {/* Pending approvals */}
+          {/* Pending approvals — real applications waiting in REVIEW. */}
           <Card title="Pending Approvals" action={<Link to="/applications" className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">View All ({data.approvals.pendingReview + data.approvals.ekycPending})</Link>}>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {APPROVALS.map((a) => {
-                const Icon = Icons[a.icon];
-                return (
-                  <div key={a.kind} className="flex items-center gap-3 rounded-xl border border-slate-200/50 bg-slate-50/50 dark:border-slate-800/40 dark:bg-slate-900/10 p-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"><Icon className="h-[18px] w-[18px]" /></span>
+            {pendingApps && pendingApps.items.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {pendingApps.items.map((a) => (
+                  <div key={a.id} className="flex items-center gap-3 rounded-xl border border-slate-200/50 bg-slate-50/50 dark:border-slate-800/40 dark:bg-slate-900/10 p-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"><Icons.agencies className="h-[18px] w-[18px]" /></span>
                     <div className="min-w-0 flex-1 leading-tight">
-                      <div className="truncate text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500">{a.kind}</div>
-                      <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200 mt-0.5">{a.name}</div>
+                      <div className="truncate text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500">{a.isIndependent ? 'Independent Agent' : 'Agency Registration'}</div>
+                      <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200 mt-0.5">{a.legalName ?? 'Unnamed application'}</div>
                     </div>
                     <Link to="/applications" className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-2.5 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors">Review</Link>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 dark:text-slate-500">No applications waiting for review.</p>
+            )}
           </Card>
         </div>
       )}
@@ -299,9 +292,9 @@ export function AdminDashboard() {
 
 const QUICK_ACTIONS: { label: string; to: string; icon: IconName }[] = [
   { label: 'Add Agency', to: '/admin/agencies', icon: 'agencies' },
-  { label: 'Create Offer', to: '/admin/promotions', icon: 'pricing' },
+  { label: 'Pricing & Policies', to: '/admin/pricing', icon: 'pricing' },
   { label: 'Broadcast Notification', to: '/admin/notifications', icon: 'bell' },
-  { label: 'Generate Invoice', to: '/admin/invoices', icon: 'reports' },
+  { label: 'Invoices & Finance', to: '/admin/finance', icon: 'reports' },
 ];
 
 function QuickActions() {
@@ -360,7 +353,7 @@ function RecentRow({ b, grad }: { b: RecentBooking; grad: string }) {
       <div className="min-w-0 flex-1 leading-tight">
         <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200">{ref}</div>
         <div className="truncate text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{b.resortName}</div>
-        <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{b.guests ?? 2} guests · {b.nights}n</div>
+        <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{b.guests != null ? `${b.guests} guests · ` : ''}{b.nights}n</div>
       </div>
       <div className="text-right leading-tight">
         <div className={`text-[11px] font-semibold ${STATE_DOT[b.state] ?? 'text-blue-600'}`}>{stateLabel(b.state)}</div>

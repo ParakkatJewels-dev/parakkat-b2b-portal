@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell } from '../../components/layout/AppShell';
-import { Badge, PageHeader, Tabs } from '../../components/ui/kit';
+import { Badge, Button, Input, PageHeader, Tabs } from '../../components/ui/kit';
 import { formatPaymentTerms } from '../../shared/format';
 import * as agencyApi from '../../api/agency.api';
 
@@ -13,6 +13,55 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex justify-between gap-4 border-b border-slate-100 py-2 text-sm last:border-0">
       <span className="text-slate-500">{label}</span>
       <span className="text-right font-medium text-slate-900">{value ?? '—'}</span>
+    </div>
+  );
+}
+
+/**
+ * B2B resale layer — the agency's default markup over its buy price. Agents see
+ * it prefilled at booking time and may override per booking.
+ */
+function ResaleMarkupCard({ current }: { current: string }) {
+  const qc = useQueryClient();
+  const [value, setValue] = useState(current);
+  const [saved, setSaved] = useState(false);
+  const saveM = useMutation({
+    mutationFn: (pct: number) => agencyApi.updateResaleMarkup(pct),
+    onSuccess: () => {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+      qc.invalidateQueries({ queryKey: ['my-agency'] });
+      qc.invalidateQueries({ queryKey: ['resale-markup'] });
+    },
+  });
+  const parsed = Number(value);
+  const valid = value.trim() !== '' && Number.isFinite(parsed) && parsed >= 0 && parsed <= 500;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <div className="mb-2 text-sm font-semibold text-slate-700">Your selling markup</div>
+      <p className="mb-3 text-xs text-slate-500 leading-relaxed">
+        Added on top of the price you pay to make the customer price shown on quotes and invoices.
+        The difference is your profit. Agents can adjust it per booking.
+      </p>
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={0}
+          max={500}
+          step="0.5"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="w-24 text-right"
+        />
+        <span className="text-sm font-semibold text-slate-500">%</span>
+        <Button variant="primary" disabled={!valid || saveM.isPending} onClick={() => saveM.mutate(parsed)}>
+          {saveM.isPending ? 'Saving…' : 'Save'}
+        </Button>
+        {saved && <span className="text-xs font-semibold text-emerald-600">Saved ✓</span>}
+      </div>
+      {!valid && value.trim() !== '' && <p className="mt-2 text-xs text-red-500">Markup must be between 0 and 500.</p>}
+      {saveM.isError && <p className="mt-2 text-xs text-red-500">Could not save — please try again.</p>}
     </div>
   );
 }
@@ -67,6 +116,7 @@ export function ProfilePage() {
                 <p className="text-sm text-slate-400">No commercial configuration.</p>
               )}
             </div>
+            <ResaleMarkupCard current={a.defaultResaleMarkupPct} />
           </div>
           <p className="text-xs text-slate-400 lg:col-span-2">Company and tax details are set during onboarding and managed by the Parakkat admin team. Contact support to request a change.</p>
         </div>

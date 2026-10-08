@@ -29,8 +29,8 @@ const STEPS: StepDef[] = [
     title: 'Partner Mode & Identity',
     fields: [
       { name: 'legalName', label: 'Legal Name' },
-      { name: 'gstin', label: 'GSTIN', placeholder: '27AABCU9603R1ZM' },
-      { name: 'pan', label: 'PAN', placeholder: 'AABCU9603R' },
+      { name: 'gstin', label: 'GSTIN', placeholder: '22AAAAA0000A1Z5' },
+      { name: 'pan', label: 'PAN', placeholder: 'AAAAA0000A' },
     ],
   },
   {
@@ -38,7 +38,7 @@ const STEPS: StepDef[] = [
     title: 'Contact & Office Address',
     fields: [
       { name: 'businessContactEmail', label: 'Business email', type: 'email' },
-      { name: 'businessContactPhone', label: 'Business phone', placeholder: '9876543210' },
+      { name: 'businessContactPhone', label: 'Business phone', placeholder: '10-digit mobile' },
       { name: 'addressLine1', label: 'Address line 1' },
       { name: 'addressLine2', label: 'Address line 2', optional: true },
       { name: 'city', label: 'City' },
@@ -54,10 +54,10 @@ const STEPS: StepDef[] = [
       { name: 'repName', label: 'Representative name' },
       { name: 'repDesignation', label: 'Designation' },
       { name: 'repEmail', label: 'Personal email', type: 'email' },
-      { name: 'repMobile', label: 'Personal mobile', placeholder: '9876543211' },
+      { name: 'repMobile', label: 'Personal mobile', placeholder: '10-digit mobile' },
       { name: 'repAadhaarRef', label: 'Aadhaar reference (for eKYC)' },
       { name: 'bankAccount', label: 'Bank account number' },
-      { name: 'ifsc', label: 'IFSC code', placeholder: 'HDFC0001234' },
+      { name: 'ifsc', label: 'IFSC code', placeholder: 'ABCD0123456' },
       { name: 'accountHolder', label: 'Account holder name' },
     ],
   },

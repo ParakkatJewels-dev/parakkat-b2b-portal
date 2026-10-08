@@ -124,7 +124,15 @@ export function BookingsManager({ title, subtitle }: { title: string; subtitle: 
             <>
               {canPay(selected) && <Button variant="secondary" disabled={busy} onClick={() => { setError(null); payM.mutate(selected.id); }}>Pay {money(selected.agencyPrice)}</Button>}
               {canCancel(selected) && <Button variant="danger" disabled={busy} onClick={() => { setError(null); cancelM.mutate(selected.id); }}>Cancel booking</Button>}
-              <Button variant="primary" onClick={() => { setError(null); documentsApi.downloadVoucher(selected.id, selected.id.slice(0, 8)).catch((e) => setError(extractError(e))); }}>Download Voucher</Button>
+              {/* B2B resale layer — customer documents at the SELL price (agency-branded). */}
+              {selected.state !== 'CANCELLED' && selected.state !== 'EXPIRED' && (
+                <Button variant="secondary" onClick={() => { setError(null); documentsApi.downloadCustomerQuote(selected.id, selected.id.slice(0, 8)).catch((e) => setError(extractError(e))); }}>Customer Quote</Button>
+              )}
+              {['CONFIRMED', 'COMMITTED', 'PAID', 'CONFIRMED_ON_CREDIT'].includes(selected.state) && (
+                <Button variant="secondary" onClick={() => { setError(null); documentsApi.downloadCustomerInvoice(selected.id, selected.id.slice(0, 8)).catch((e) => setError(extractError(e))); }}>Customer Invoice</Button>
+              )}
+              <Button variant="secondary" onClick={() => { setError(null); documentsApi.downloadVoucher(selected.id, selected.id.slice(0, 8), 'agent').catch((e) => setError(extractError(e))); }}>Agent Voucher</Button>
+              <Button variant="primary" onClick={() => { setError(null); documentsApi.downloadVoucher(selected.id, selected.id.slice(0, 8), 'guest').catch((e) => setError(extractError(e))); }}>Guest Voucher</Button>
             </>
           }
         >
@@ -135,14 +143,20 @@ export function BookingsManager({ title, subtitle }: { title: string; subtitle: 
             <Detail label="Check-out" value={selected.checkOut.slice(0, 10)} />
             <Detail label="Guests" value={selected.guests} />
             <Detail label="Nights" value={selected.nights} />
-            <Detail label="Amount" value={money(selected.agencyPrice)} />
+            <Detail label="Amount (you pay)" value={money(selected.agencyPrice)} />
             <Detail label="Payment mode" value={selected.paymentMode} />
+            {selected.sellPrice != null && (
+              <Detail label={`Customer price (+${Number(selected.resaleMarkupPct ?? 0)}%)`} value={money(selected.sellPrice)} />
+            )}
+            {selected.sellPrice != null && (
+              <Detail label="Your profit" value={money(Number(selected.sellPrice) - Number(selected.agencyPrice))} />
+            )}
             <Detail label="Status" value={<Badge tone={STATE_TONE[selected.state]}>{stateLabel(selected.state)}</Badge>} />
             <Detail label="Category" value={<Badge tone={CATEGORY_TONE[bookingCategory(selected)]}>{bookingCategory(selected)}</Badge>} />
             {selected.leadGuestName && <Detail label="Lead guest" value={selected.leadGuestName} />}
             {selected.guestIdLast4 && <Detail label="Guest ID" value={`${selected.guestIdType ?? 'ID'} ••••${selected.guestIdLast4}`} />}
             {selected.specialRequests && <Detail label="Special requests" value={selected.specialRequests} />}
-            {selected.axisRoomsRef && <Detail label="AxisRooms ref" value={selected.axisRoomsRef} />}
+            {selected.crsBookingRef && <Detail label="CRS ref" value={selected.crsBookingRef} />}
             {selected.holdExpiresAt && <Detail label="Hold expires" value={new Date(selected.holdExpiresAt).toLocaleString()} />}
           </div>
         </Modal>

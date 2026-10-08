@@ -56,6 +56,8 @@ export interface CreateBookingInput extends AvailabilityParams {
   // childAges (v3 §2.2) is inherited; in the POST body it is sent as a JSON array.
   roomTypeId: string;
   plan?: RatePlan;
+  // B2B resale layer — per-booking override of the agency default markup.
+  resaleMarkupPct?: number;
   guest?: GuestInput;
 }
 

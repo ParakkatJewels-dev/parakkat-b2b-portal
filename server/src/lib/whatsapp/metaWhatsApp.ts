@@ -3,18 +3,37 @@ import { logger } from '../logger';
 import type { WhatsAppProvider } from './whatsapp.types';
 
 /**
- * Stub for the Meta WhatsApp Business Cloud API. Real delivery requires a
- * BSP/Meta app, a phone-number id, and approved message templates (a scheduling
- * dependency per v3 §9). Until wired, it logs like the console provider so
- * enabling it never breaks the notification flow.
+ * Meta WhatsApp Business Cloud API adapter. Sends a plain-text message via the
+ * Graph API. Note: outside a 24h customer-service window Meta requires approved
+ * message TEMPLATES — plain text sends will be rejected by the API for cold
+ * outreach; wire template names before relying on this for notifications.
+ * Failures THROW (callers catch per-channel) so delivery problems are visible.
  */
 export class MetaWhatsApp implements WhatsAppProvider {
   async send(to: string, message: string): Promise<void> {
     if (!env.WHATSAPP_PHONE_NUMBER_ID || !env.WHATSAPP_ACCESS_TOKEN) {
-      logger.warn('[MetaWhatsApp] credentials missing — message not sent', { to });
-      return;
+      throw new Error(`[MetaWhatsApp] WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_ACCESS_TOKEN missing — message to ${to} not sent`);
     }
-    // TODO: POST https://graph.facebook.com/v20.0/{phoneNumberId}/messages with an approved template.
-    logger.info('[MetaWhatsApp] send (stub)', { to, message });
+
+    const res = await fetch(`https://graph.facebook.com/v20.0/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body: message },
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    const body = await res.text();
+    if (!res.ok) {
+      throw new Error(`[MetaWhatsApp] Graph API returned ${res.status}: ${body.slice(0, 300)}`);
+    }
+    logger.info('[MetaWhatsApp] message sent', { to });
   }
 }

@@ -12,6 +12,7 @@ import {
   groupIdParamSchema,
   listBookingsQuerySchema,
   resortCancelSchema,
+  voucherQuerySchema,
 } from './booking.schema';
 
 export const bookingRouter = Router();
@@ -183,7 +184,7 @@ bookingRouter.get(
  * @openapi
  * /bookings/{id}/voucher:
  *   get:
- *     summary: Download the booking voucher PDF (ADMIN any; AGENCY/AGENT own)
+ *     summary: Download the booking voucher PDF — ?variant=guest (price-free, default) or agent (with prices) (ADMIN any; AGENCY/AGENT own)
  *     tags: [Bookings]
  *     security: [{ bearerAuth: [] }]
  */
@@ -191,15 +192,47 @@ bookingRouter.get(
   '/:id/voucher',
   authenticate,
   requireRole('ADMIN', 'AGENCY', 'AGENT'),
-  validate({ params: bookingIdParamSchema }),
+  validate({ params: bookingIdParamSchema, query: voucherQuerySchema }),
   asyncHandler(bookingController.voucherPdf),
+);
+
+/**
+ * @openapi
+ * /bookings/{id}/customer-quote:
+ *   get:
+ *     summary: Customer quotation PDF — agency-branded, sell price only (ADMIN any; AGENCY/AGENT own)
+ *     tags: [Bookings]
+ *     security: [{ bearerAuth: [] }]
+ */
+bookingRouter.get(
+  '/:id/customer-quote',
+  authenticate,
+  requireRole('ADMIN', 'AGENCY', 'AGENT'),
+  validate({ params: bookingIdParamSchema }),
+  asyncHandler(bookingController.customerQuotePdf),
+);
+
+/**
+ * @openapi
+ * /bookings/{id}/customer-invoice:
+ *   get:
+ *     summary: Customer invoice PDF — agency-branded, sell price only (ADMIN any; AGENCY/AGENT own)
+ *     tags: [Bookings]
+ *     security: [{ bearerAuth: [] }]
+ */
+bookingRouter.get(
+  '/:id/customer-invoice',
+  authenticate,
+  requireRole('ADMIN', 'AGENCY', 'AGENT'),
+  validate({ params: bookingIdParamSchema }),
+  asyncHandler(bookingController.customerInvoicePdf),
 );
 
 /**
  * @openapi
  * /bookings/{id}/pay:
  *   post:
- *     summary: Pay for a pay-first booking, then commit to AxisRooms (AGENT/AGENCY)
+ *     summary: Pay for a pay-first booking, then commit to CRS (AGENT/AGENCY)
  *     tags: [Bookings]
  *     security: [{ bearerAuth: [] }]
  */
@@ -214,7 +247,7 @@ bookingRouter.post(
  * @openapi
  * /bookings/{id}/cancel:
  *   post:
- *     summary: Cancel a booking (reverses AxisRooms if committed) (AGENT/AGENCY)
+ *     summary: Cancel a booking (reverses CRS if committed) (AGENT/AGENCY)
  *     tags: [Bookings]
  *     security: [{ bearerAuth: [] }]
  */

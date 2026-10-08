@@ -2,7 +2,7 @@ import { httpClient } from './httpClient';
 
 export type RatePlan = 'EP' | 'CP' | 'MAP' | 'AP';
 
-// --- v4 §1 — AxisRooms read-through (source of truth; net rates, pre-markup) ---
+// --- v4 §1 — CRS read-through (source of truth; net rates, pre-markup) ---
 export interface AxisRatesRoom {
   resortId: string;
   resortName: string;
@@ -39,7 +39,7 @@ export async function getAxisRates(params: { resortId?: string; checkIn: string;
   return (await httpClient.get('/catalog/axis-rates', { params })).data;
 }
 
-// --- Admin catalog (AxisRooms resorts + room types; read-only) ----------------
+// --- Admin catalog (CRS resorts + room types; read-only) ----------------
 export interface CatalogRoom {
   roomTypeId: string;
   roomTypeName: string;

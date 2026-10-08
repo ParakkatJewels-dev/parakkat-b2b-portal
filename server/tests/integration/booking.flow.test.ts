@@ -2,7 +2,7 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PaymentMode } from '@prisma/client';
 import { createApp } from '../../src/app';
-import { getAxisRooms } from '../../src/lib/axisrooms';
+import { getInventoryClient } from '../../src/lib/inventory';
 import { hashPassword } from '../../src/modules/auth/password.service';
 import { issueAccessToken } from '../../src/modules/auth/token.service';
 import { disconnectTestDb, resetDatabase, testPrisma } from '../setup/testDb';
@@ -75,13 +75,13 @@ describe('catalog search', () => {
 });
 
 describe('credit gate branches', () => {
-  it('within limit → confirmed on credit → committed to AxisRooms', async () => {
+  it('within limit → confirmed on credit → committed to CRS', async () => {
     const { token } = await setupAgency({ paymentMode: 'CREDIT', creditLimit: 50000, markupPct: 10 });
     const res = await request(app).post('/api/bookings').set('Authorization', `Bearer ${token}`).send(goaDeluxe);
     expect(res.status).toBe(201);
     expect(res.body.state).toBe('COMMITTED');
     expect(res.body.paymentMode).toBe('CREDIT');
-    expect(res.body.axisRoomsRef).toMatch(/^AXR-/);
+    expect(res.body.crsBookingRef).toMatch(/^AXR-/);
     expect(res.body.agencyPrice).toBe('9900');
   });
 
@@ -92,14 +92,14 @@ describe('credit gate branches', () => {
     expect(created.body.state).toBe('AWAITING_PAYMENT');
     expect(created.body.paymentMode).toBe('PREPAY');
     expect(created.body.holdExpiresAt).toBeTruthy();
-    expect(created.body.axisRoomsRef).toBeNull();
+    expect(created.body.crsBookingRef).toBeNull();
 
     const paid = await request(app)
       .post(`/api/bookings/${created.body.id}/pay`)
       .set('Authorization', `Bearer ${token}`);
     expect(paid.status).toBe(200);
     expect(paid.body.state).toBe('COMMITTED');
-    expect(paid.body.axisRoomsRef).toMatch(/^AXR-/);
+    expect(paid.body.crsBookingRef).toMatch(/^AXR-/);
   });
 
   it('credit agency over its limit takes the pay-first branch (D3)', async () => {
@@ -120,10 +120,10 @@ describe('credit gate branches', () => {
   });
 });
 
-describe('AxisRooms downtime — block, do not queue', () => {
-  it('blocks booking creation with 503 when AxisRooms is down', async () => {
+describe('CRS downtime — block, do not queue', () => {
+  it('blocks booking creation with 503 when CRS is down', async () => {
     const { token } = await setupAgency({ paymentMode: 'CREDIT', creditLimit: 50000, markupPct: 10 });
-    vi.spyOn(getAxisRooms(), 'healthCheck').mockResolvedValue(false);
+    vi.spyOn(getInventoryClient(), 'healthCheck').mockResolvedValue(false);
     const res = await request(app).post('/api/bookings').set('Authorization', `Bearer ${token}`).send(goaDeluxe);
     expect(res.status).toBe(503);
     const count = await testPrisma.booking.count();
@@ -148,14 +148,14 @@ describe('tentative hold expiry', () => {
 });
 
 describe('cancellation', () => {
-  it('cancels a committed booking and reverses AxisRooms', async () => {
+  it('cancels a committed booking and reverses CRS', async () => {
     const { token } = await setupAgency({ paymentMode: 'CREDIT', creditLimit: 50000, markupPct: 10 });
-    const cancelSpy = vi.spyOn(getAxisRooms(), 'cancelReservation');
+    const cancelSpy = vi.spyOn(getInventoryClient(), 'cancelReservation');
     const created = await request(app).post('/api/bookings').set('Authorization', `Bearer ${token}`).send(goaDeluxe);
     const res = await request(app).post(`/api/bookings/${created.body.id}/cancel`).set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.state).toBe('CANCELLED');
-    expect(cancelSpy).toHaveBeenCalledWith(created.body.axisRoomsRef);
+    expect(cancelSpy).toHaveBeenCalledWith(created.body.crsBookingRef);
   });
 });
 

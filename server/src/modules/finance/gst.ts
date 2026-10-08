@@ -25,10 +25,14 @@ interface ResortGst {
   gstin: string;
 }
 
+// State codes for the MOCK resorts keep the intra/inter-state (CGST/SGST vs
+// IGST) math working in dev. GSTINs are EMPTY on purpose — a fabricated tax
+// number must never print on an invoice; real per-property GSTINs are supplied
+// via RESORT_GST_JSON at deployment.
 const DEFAULT_RESORT_GST: Record<string, ResortGst> = {
-  'resort-goa': { stateCode: '30', gstin: '30AABCP1234A1Z5' },
-  'resort-munnar': { stateCode: '32', gstin: '32AABCP1234A1Z2' },
-  'resort-udaipur': { stateCode: '08', gstin: '08AABCP1234A1Z9' },
+  'resort-goa': { stateCode: '30', gstin: '' },
+  'resort-munnar': { stateCode: '32', gstin: '' },
+  'resort-udaipur': { stateCode: '08', gstin: '' },
 };
 
 let slabsCache: Slab[] | null = null;
@@ -117,7 +121,7 @@ export function computeGst(input: GstInput): GstBreakup {
     gstRate: rate,
     sac: '996311',
     placeOfSupply: resort?.stateCode ?? null,
-    supplierGstin: resort?.gstin ?? null,
+    supplierGstin: resort?.gstin || null,
     recipientGstin: input.recipientGstin ?? null,
     cgst,
     sgst,

@@ -46,6 +46,8 @@ export const createBookingSchema = z.object({
   children: z.number().int().min(0).max(20).optional(),
   childAges: z.array(z.number().int().min(0).max(17)).max(20).optional(), // v3 §2.2
   extraBeds: z.number().int().min(0).max(10).optional(),
+  // B2B resale layer — per-booking override of the agency's default resale markup.
+  resaleMarkupPct: z.number().min(0).max(500).optional(),
   guest: guestSchema.optional(),
 });
 
@@ -54,6 +56,8 @@ export const createGroupBookingSchema = z.object({
 });
 
 export const bookingIdParamSchema = z.object({ id: z.string().uuid() });
+// guest = price-free (safe for the end customer); agent = internal copy with prices.
+export const voucherQuerySchema = z.object({ variant: z.enum(['guest', 'agent']).optional() });
 export const groupIdParamSchema = z.object({ groupId: z.string().uuid() });
 export const resortCancelSchema = z.object({ reason: z.string().min(1).max(500) });
 

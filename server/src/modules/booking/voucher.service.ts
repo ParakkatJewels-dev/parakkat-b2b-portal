@@ -9,8 +9,19 @@ export interface VoucherScope {
   agentId?: string; // further restrict to this agent (AGENT)
 }
 
+/**
+ * B2B resale layer — two voucher variants:
+ * - 'guest': price-free, safe to hand to the end customer (default).
+ * - 'agent': internal copy with the agency's buy price, sell price and profit.
+ */
+export type VoucherVariant = 'guest' | 'agent';
+
 /** Booking confirmation voucher — printable proof of a committed reservation. */
-export async function renderVoucherPdf(bookingId: string, scope: VoucherScope): Promise<{ buffer: Buffer; fileName: string }> {
+export async function renderVoucherPdf(
+  bookingId: string,
+  scope: VoucherScope,
+  variant: VoucherVariant = 'guest',
+): Promise<{ buffer: Buffer; fileName: string }> {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
     include: { agency: true, agent: { select: { name: true, email: true } } },
@@ -21,11 +32,16 @@ export async function renderVoucherPdf(bookingId: string, scope: VoucherScope): 
 
   // Only confirmed/committed bookings have a meaningful voucher.
   const confirmable = ['CONFIRMED', 'COMMITTED', 'PAID', 'CONFIRMED_ON_CREDIT', 'COMMIT_FAILED'];
-  const isConfirmed = confirmable.includes(booking.state) || !!booking.committedAt || !!booking.axisRoomsRef;
+  const isConfirmed = confirmable.includes(booking.state) || !!booking.committedAt || !!booking.crsBookingRef;
 
   const company = getCompanyProfile();
   const buffer = await renderPdf((doc) => {
-    drawHeader(doc, company, 'BOOKING VOUCHER', isConfirmed ? 'Confirmed reservation' : `Status: ${booking.state}`);
+    drawHeader(
+      doc,
+      company,
+      'BOOKING VOUCHER',
+      variant === 'agent' ? 'Agent copy — internal, not for guests' : isConfirmed ? 'Confirmed reservation' : `Status: ${booking.state}`,
+    );
 
     drawMetaColumns(
       doc,
@@ -36,7 +52,7 @@ export async function renderVoucherPdf(bookingId: string, scope: VoucherScope): 
         ['Rate plan', booking.ratePlan],
       ],
       [
-        ['AxisRooms ref', booking.axisRoomsRef ?? 'Pending sync'],
+        ['CRS ref', booking.crsBookingRef ?? 'Pending sync'],
         ['Booked by', booking.agency.legalName],
         ['Agent', booking.agent.name ?? booking.agent.email],
         ['Status', booking.state],
@@ -78,17 +94,29 @@ export async function renderVoucherPdf(bookingId: string, scope: VoucherScope): 
       doc.fillColor(INK).fontSize(9).font('Helvetica').text(booking.specialRequests, { width: 499 });
     }
 
-    // Charge summary
+    // B2B resale layer — the GUEST voucher stays price-free (printing agencyPrice
+    // would leak the agent's buy price to their customer). The AGENT copy carries
+    // the full money picture for internal records.
     doc.moveDown(0.8);
     doc.moveTo(48, doc.y).lineTo(547, doc.y).strokeColor(LINE).lineWidth(1).stroke();
-    doc.moveDown(0.5);
-    doc.fillColor(MUTED).fontSize(9).font('Helvetica').text('Payment mode', 320, doc.y, { width: 130 });
-    doc.fillColor(INK).font('Helvetica-Bold').text(booking.paymentMode, 450, doc.y - 12, { width: 97, align: 'right' });
-    doc.moveDown(0.4);
-    doc.fillColor(MUTED).fontSize(11).font('Helvetica').text('Total charge', 320, doc.y, { width: 130 });
-    doc.fillColor(INK).fontSize(13).font('Helvetica-Bold').text(money(Number(booking.agencyPrice)), 450, doc.y - 15, { width: 97, align: 'right' });
 
-    doc.y += 24;
+    if (variant === 'agent') {
+      const row = (label: string, value: string, bold = false) => {
+        doc.moveDown(0.4);
+        doc.fillColor(MUTED).fontSize(9).font('Helvetica').text(label, 320, doc.y, { width: 130 });
+        doc.fillColor(INK).fontSize(bold ? 13 : 10).font('Helvetica-Bold').text(value, 450, doc.y - (bold ? 15 : 12), { width: 97, align: 'right' });
+      };
+      doc.moveDown(0.1);
+      row('Payment mode', booking.paymentMode);
+      row('Your price', money(Number(booking.agencyPrice)), true);
+      if (booking.sellPrice != null) {
+        row(`Customer price (+${Number(booking.resaleMarkupPct ?? 0)}%)`, money(Number(booking.sellPrice)));
+        row('Your profit', money(Number(booking.sellPrice) - Number(booking.agencyPrice)));
+      }
+      doc.y += 24;
+    } else {
+      doc.y += 12;
+    }
     doc.x = 48;
     const times = getCheckInOutTimes();
     doc.fillColor(MUTED).fontSize(8).font('Helvetica').text(
@@ -98,8 +126,12 @@ export async function renderVoucherPdf(bookingId: string, scope: VoucherScope): 
       { width: 499 },
     );
 
-    drawFooter(doc, `${company.name} · Booking voucher · ${booking.correlationId.slice(0, 8).toUpperCase()}`);
+    drawFooter(
+      doc,
+      `${company.name} · ${variant === 'agent' ? 'Agent voucher (internal)' : 'Booking voucher'} · ${booking.correlationId.slice(0, 8).toUpperCase()}`,
+    );
   });
 
-  return { buffer, fileName: `voucher-${booking.correlationId.slice(0, 8).toUpperCase()}.pdf` };
+  const ref = booking.correlationId.slice(0, 8).toUpperCase();
+  return { buffer, fileName: variant === 'agent' ? `agent-voucher-${ref}.pdf` : `voucher-${ref}.pdf` };
 }

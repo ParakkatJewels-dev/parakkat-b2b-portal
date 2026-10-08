@@ -1,16 +1,9 @@
 import { useEffect } from 'react';
-import { io } from 'socket.io-client';
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
+import { httpClient } from '../api/httpClient';
 import { useAuthStore } from '../store/authStore';
 
-// The socket connects directly to the API origin (not through the Vite proxy).
-// In dev VITE_API_BASE_URL is empty → localhost:4000; in prod set it to the
-// Render API URL and we derive its origin.
-const raw = import.meta.env.VITE_API_BASE_URL as string | undefined;
-const API_ORIGIN = raw && raw.startsWith('http') ? new URL(raw).origin : 'http://localhost:4000';
-
-// Map a backend "changed" topic → the React Query keys to invalidate. Prefixes
-// match (e.g. ['applications'] covers ['applications', 'REVIEW']).
 const TOPIC_KEYS: Record<string, string[][]> = {
   applications: [['applications'], ['application'], ['admin-summary']],
   agencies: [['agencies'], ['admin-summary']],
@@ -18,34 +11,82 @@ const TOPIC_KEYS: Record<string, string[][]> = {
   finance: [['invoices'], ['balance'], ['agency-summary'], ['admin-summary'], ['reconciliation']],
 };
 
-/**
- * Multi-user live updates: subscribes to the backend's Socket.IO "invalidate"
- * signals and refetches the affected React Query data — so changes made by any
- * user appear without a manual refresh. The server scopes events by role/agency
- * room, so a client only hears about data it's allowed to see.
- */
+interface RealtimeConfig {
+  enabled: boolean;
+  channels: string[];
+}
+
+interface BroadcastMessage {
+  payload?: { topics?: string[] };
+}
+
 export function useRealtime() {
   const queryClient = useQueryClient();
-  const accessToken = useAuthStore((s) => s.accessToken);
+  const accessToken = useAuthStore((state) => state.accessToken);
 
   useEffect(() => {
     if (!accessToken) return;
-    const socket = io(API_ORIGIN, { auth: { token: accessToken } });
 
-    socket.on('invalidate', (msg: { topics?: string[] }) => {
-      const done = new Set<string>();
-      for (const topic of msg.topics ?? []) {
+    let cancelled = false;
+    let supabase: SupabaseClient | undefined;
+    const channels: RealtimeChannel[] = [];
+
+    const invalidate = (topics: string[]) => {
+      const seen = new Set<string>();
+      for (const topic of topics) {
         for (const key of TOPIC_KEYS[topic] ?? []) {
           const id = JSON.stringify(key);
-          if (done.has(id)) continue;
-          done.add(id);
-          queryClient.invalidateQueries({ queryKey: key });
+          if (seen.has(id)) continue;
+          seen.add(id);
+          void queryClient.invalidateQueries({ queryKey: key });
         }
       }
-    });
+    };
+
+    const refreshActiveData = () => {
+      if (document.visibilityState === 'visible') invalidate(Object.keys(TOPIC_KEYS));
+    };
+
+    const pollTimer = window.setInterval(refreshActiveData, 60_000);
+
+    async function subscribe() {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey =
+        import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseKey) return;
+
+      try {
+        const response = await httpClient.get<RealtimeConfig>('/realtime/config');
+        if (cancelled || !response.data.enabled || response.data.channels.length === 0) return;
+
+        const { createClient } = await import('@supabase/supabase-js');
+        if (cancelled) return;
+        supabase = createClient(supabaseUrl, supabaseKey, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        });
+        for (const channelName of response.data.channels) {
+          const channel = supabase
+            .channel(channelName, { config: { private: false } })
+            .on('broadcast', { event: 'invalidate' }, (message: BroadcastMessage) => {
+              invalidate(message.payload?.topics ?? []);
+            })
+            .subscribe();
+          channels.push(channel);
+        }
+      } catch {
+        // The one-minute refresh above keeps data current when Realtime is
+        // unavailable or has not yet been configured.
+      }
+    }
+
+    void subscribe();
 
     return () => {
-      socket.disconnect();
+      cancelled = true;
+      window.clearInterval(pollTimer);
+      if (supabase) {
+        for (const channel of channels) void supabase.removeChannel(channel);
+      }
     };
   }, [accessToken, queryClient]);
 }

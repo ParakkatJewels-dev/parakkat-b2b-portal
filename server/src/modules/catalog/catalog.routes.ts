@@ -15,7 +15,7 @@ const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
  * @openapi
  * /catalog/resorts:
  *   get:
- *     summary: List resorts (read-only from AxisRooms) — AGENT/AGENCY
+ *     summary: List resorts (read-only from CRS) — AGENT/AGENCY
  *     tags: [Catalog]
  *     security: [{ bearerAuth: [] }]
  */
@@ -61,7 +61,7 @@ catalogRouter.get(
  * @openapi
  * /catalog/axis-rates:
  *   get:
- *     summary: Admin read-through of AxisRooms rate plans, occupancy & restrictions
+ *     summary: Admin read-through of CRS rate plans, occupancy & restrictions
  *     tags: [Catalog]
  *     security: [{ bearerAuth: [] }]
  */
@@ -76,7 +76,7 @@ catalogRouter.get(
 /**
  * @openapi
  * /catalog/admin/overview:
- *   get: { summary: Admin read-only catalog of AxisRooms resorts + room types, tags: [Catalog], security: [{ bearerAuth: [] }] }
+ *   get: { summary: Admin read-only catalog of CRS resorts + room types, tags: [Catalog], security: [{ bearerAuth: [] }] }
  */
 catalogRouter.get(
   '/admin/overview',

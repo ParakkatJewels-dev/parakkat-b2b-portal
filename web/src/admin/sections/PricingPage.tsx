@@ -95,8 +95,8 @@ export function PricingPage() {
   return (
     <AppShell>
       <PageHeader
-        title="Pricing (AxisRooms)"
-        subtitle="Rate plans, occupancy and restrictions are sourced from AxisRooms. Rates shown are NET (pre-markup); the portal applies each agency's markup at booking."
+        title="Pricing (CRS)"
+        subtitle="Rate plans, occupancy and restrictions are sourced from CRS. Rates shown are NET (pre-markup); the portal applies each agency's markup at booking."
       />
       <Tabs
         tabs={[
@@ -125,7 +125,7 @@ export function PricingPage() {
             <DataTable columns={cols} rows={rooms} rowKey={(r) => r.roomTypeId} empty="No rooms for this resort / date range." />
           )}
           <p className="mt-3 text-xs text-slate-400">
-            Read-only. Rate plans, per-date rates and restrictions (min-stay, CTA/CTD, stop-sell) come from AxisRooms and cannot be edited here.
+            Read-only. Rate plans, per-date rates and restrictions (min-stay, CTA/CTD, stop-sell) come from CRS and cannot be edited here.
           </p>
         </>
       )}
@@ -134,7 +134,7 @@ export function PricingPage() {
         <>
           <DataTable columns={markupCols} rows={tierRows} rowKey={(m) => m.tier} empty="No tiers configured." />
           <p className="mt-3 text-xs text-slate-400">
-            Tier defaults are the portal markup applied to AxisRooms net rates. Set a per-agency override (“personal bias”) on the{' '}
+            Tier defaults are the portal markup applied to CRS net rates. Set a per-agency override (“personal bias”) on the{' '}
             <Link to="/admin/agencies" className="text-blue-600 hover:underline">agency</Link> detail page. Edit tier defaults in{' '}
             <Link to="/admin/settings" className="text-blue-600 hover:underline">Settings</Link>.
           </p>

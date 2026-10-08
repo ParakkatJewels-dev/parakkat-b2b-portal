@@ -1,12 +1,12 @@
 /**
- * AxisRooms is the source of truth for resorts, room types, availability,
+ * CRS is the source of truth for resorts, room types, availability,
  * inventory, RATE PLANS and RESTRICTIONS (read-only for the portal), and receives
  * reservation writes on commit / reversals on cancel (Instructions.md §10, data
  * ownership §3). The portal keeps NO local master tables for this data — the
  * portal's only pricing responsibility is applying the agency's markup to the
- * AxisRooms net rate.
+ * CRS net rate.
  *
- * Phase 1 (v4) widens this contract to match Parakkat's real AxisRooms model:
+ * Phase 1 (v4) widens this contract to match Parakkat's real CRS model:
  * rate plans (EP/CP/MAP/AP) with per-date net rates, occupancy-based pricing,
  * booking restrictions, day-use stays, and multi-room reservations. New fields
  * are optional so the live adapter can be filled in incrementally; the mock
@@ -16,7 +16,7 @@
 /** Meal/rate plan codes (mirror Prisma's RatePlanCode; kept local to decouple the integration lib). */
 export type RatePlanCode = 'EP' | 'CP' | 'MAP' | 'AP';
 
-/** Overnight stay vs same-day day-use. AxisRooms exposes day-use as a distinct product. */
+/** Overnight stay vs same-day day-use. CRS exposes day-use as a distinct product. */
 export type StayType = 'OVERNIGHT' | 'DAY_USE';
 
 export interface Resort {
@@ -25,7 +25,7 @@ export interface Resort {
   location: string;
 }
 
-/** Occupancy pricing config for a room type, sourced from AxisRooms. */
+/** Occupancy pricing config for a room type, sourced from CRS. */
 export interface OccupancyConfig {
   baseOccupancy: number; // guests the base rate covers
   maxAdults: number;
@@ -41,7 +41,7 @@ export interface OccupancyConfig {
 /** Net (pre-markup) rate for a single date. */
 export interface DailyRate {
   date: string; // YYYY-MM-DD
-  rate: number; // AxisRooms net rate for that night
+  rate: number; // CRS net rate for that night
 }
 
 /** A rate plan offered for a room type, with per-date net rates over the queried range. */
@@ -50,7 +50,7 @@ export interface RatePlan {
   dailyRates: DailyRate[];
 }
 
-/** Booking restrictions pushed by AxisRooms for a room type / date range. */
+/** Booking restrictions pushed by CRS for a room type / date range. */
 export interface Restrictions {
   minNights: number; // minimum length of stay (1 = no restriction)
   maxNights?: number;
@@ -62,7 +62,7 @@ export interface Restrictions {
 /** Day-use (same-day) option for a room type. */
 export interface DayUseOption {
   available: boolean;
-  ratePerUse: number; // AxisRooms net day-use rate
+  ratePerUse: number; // CRS net day-use rate
   earliestStart?: string; // HH:mm
   latestEnd?: string; // HH:mm
 }
@@ -75,7 +75,7 @@ export interface RoomTypeAvailability {
   maxOccupancy: number;
   /** Cheapest nightly net rate (kept for back-compat; = EP nightly where present). */
   baseRatePerNight: number;
-  // --- v4 AxisRooms-sourced enrichment (optional; populated by search/getRoomTypeRates) ---
+  // --- v4 CRS-sourced enrichment (optional; populated by search/getRoomTypeRates) ---
   occupancy?: OccupancyConfig;
   ratePlans?: RatePlan[];
   restrictions?: Restrictions;
@@ -133,10 +133,10 @@ export interface CreateReservationInput {
 }
 
 export interface CreateReservationResult {
-  axisRoomsRef: string;
+  crsBookingRef: string;
 }
 
-export interface AxisRoomsClient {
+export interface InventoryClient {
   /** Health probe used before allowing a commit (§10 — block, don't queue, on downtime). */
   healthCheck(): Promise<boolean>;
   listResorts(): Promise<Resort[]>;
@@ -147,8 +147,8 @@ export interface AxisRoomsClient {
   /** Fresh read for a single room type — used to refresh-before-book. */
   getRoomType(resortId: string, roomTypeId: string): Promise<RoomTypeAvailability | null>;
   /** v4 — dated ARI pull: rate plans + restrictions + occupancy for one room type.
-   *  The portal prices bookings from this (markup on the AxisRooms net rate). */
+   *  The portal prices bookings from this (markup on the CRS net rate). */
   getRoomTypeRates(query: RatesQuery): Promise<RoomTypeRates | null>;
   createReservation(input: CreateReservationInput): Promise<CreateReservationResult>;
-  cancelReservation(axisRoomsRef: string): Promise<void>;
+  cancelReservation(crsBookingRef: string): Promise<void>;
 }

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import type { Booking } from '@prisma/client';
 import { env } from '../../config/env';
 import { prisma } from '../../lib/prisma';
-import { getAxisRooms } from '../../lib/axisrooms';
+import { getInventoryClient } from '../../lib/inventory';
 import { broadcast } from '../../lib/realtime';
 import { logger } from '../../lib/logger';
 import { ApiError } from '../../utils/apiError';
@@ -17,7 +17,7 @@ import { notify, type EntityRef } from '../notifications/notification.service';
 import type { NotificationPayload } from '../notifications/templates';
 import { evaluateCreditGate } from './creditGate';
 import { validateStayDates } from './dates';
-import { priceRoomFromAxis, priceDayUseFromAxis } from '../pricing/pricing.service';
+import { priceRoomFromAxis, priceDayUseFromAxis, applyResaleMarkup } from '../pricing/pricing.service';
 import { assertBookable } from '../inventory/inventory.service';
 import { Prisma, type ActorRole, type RatePlanCode } from '@prisma/client';
 
@@ -38,6 +38,9 @@ export interface CreateBookingInput {
   children?: number;
   childAges?: number[]; // v3 §2.2 — drives age-band child pricing
   extraBeds?: number;
+  // B2B resale layer — the agent's own markup on top of agencyPrice for this
+  // booking; falls back to the agency's defaultResaleMarkupPct when omitted.
+  resaleMarkupPct?: number;
   // v3 §8 — guest data (full ID is minimised out; only last-4 is retained).
   guest?: {
     name?: string;
@@ -69,17 +72,17 @@ async function getCurrentConfigOrThrow(agencyId: string) {
 }
 
 /**
- * Pushes the reservation to AxisRooms and marks the booking COMMITTED
+ * Pushes the reservation to CRS and marks the booking COMMITTED
  * (idempotent on correlationId). v3 §5.2 — a push failure does NOT throw: the
  * booking is parked in COMMIT_FAILED and queued for automatic rebook, so a
  * payment already collected is never lost. Returns the COMMITTED or COMMIT_FAILED
  * booking; callers must check `state` before recording obligations / notifying.
  */
-async function commitToAxisRooms(booking: Booking): Promise<Booking> {
-  const axis = getAxisRooms();
+async function commitToCrs(booking: Booking): Promise<Booking> {
+  const axis = getInventoryClient();
   try {
-    if (!(await axis.healthCheck())) throw new Error('AxisRooms health check failed');
-    const { axisRoomsRef } = await axis.createReservation({
+    if (!(await axis.healthCheck())) throw new Error('CRS health check failed');
+    const { crsBookingRef } = await axis.createReservation({
       correlationId: booking.correlationId,
       resortId: booking.resortId,
       roomTypeId: booking.roomTypeId,
@@ -90,7 +93,7 @@ async function commitToAxisRooms(booking: Booking): Promise<Booking> {
     });
     const committed = await prisma.booking.update({
       where: { id: booking.id },
-      data: { state: 'COMMITTED', axisRoomsRef, committedAt: new Date() },
+      data: { state: 'COMMITTED', crsBookingRef, committedAt: new Date() },
     });
     await recordAuditLogSafe({
       entityType: 'Booking',
@@ -98,7 +101,7 @@ async function commitToAxisRooms(booking: Booking): Promise<Booking> {
       event: 'BOOKING_COMMITTED',
       actorId: null,
       actorRole: 'SYSTEM',
-      after: { axisRoomsRef, correlationId: booking.correlationId },
+      after: { crsBookingRef, correlationId: booking.correlationId },
     });
     return committed;
   } catch (err) {
@@ -107,7 +110,7 @@ async function commitToAxisRooms(booking: Booking): Promise<Booking> {
 }
 
 /**
- * v3 §5.2 — records/advances a rebook task after a failed AxisRooms push. Moves
+ * v3 §5.2 — records/advances a rebook task after a failed CRS push. Moves
  * the booking to COMMIT_FAILED, increments attempts, and parks it as ABANDONED
  * once the retry ceiling is hit (manual admin resolution). Funds stay held.
  */
@@ -131,7 +134,7 @@ async function handleCommitFailure(booking: Booking, err: unknown): Promise<Book
     actorRole: 'SYSTEM',
     after: { error: message, attempts },
   });
-  logger.error('AxisRooms commit failed — booking queued for rebook', {
+  logger.error('CRS commit failed — booking queued for rebook', {
     bookingId: booking.id,
     correlationId: booking.correlationId,
     attempts,
@@ -145,7 +148,7 @@ async function handleCommitFailure(booking: Booking, err: unknown): Promise<Book
       : { event: 'BOOKING_PENDING_CONFIRMATION', resortName: booking.resortName },
     { entityType: 'Booking', entityId: booking.id },
   );
-  broadcast(['bookings'], { agencyId: booking.agencyId });
+  await broadcast(['bookings'], { agencyId: booking.agencyId });
   return failed;
 }
 
@@ -168,12 +171,12 @@ async function onRebookResolved(booking: Booking): Promise<void> {
     { event: 'BOOKING_CONFIRMED', resortName: booking.resortName, rooms: 1, checkIn: booking.checkIn.toISOString() },
     { entityType: 'Booking', entityId: booking.id },
   );
-  broadcast(['bookings', 'finance'], { agencyId: booking.agencyId });
+  await broadcast(['bookings', 'finance'], { agencyId: booking.agencyId });
 }
 
 /** v3 §5.2 — retry one queued booking (worker + manual admin retry share this). */
 async function attemptRebook(booking: Booking): Promise<Booking> {
-  const committed = await commitToAxisRooms(booking);
+  const committed = await commitToCrs(booking);
   if (committed.state === 'COMMITTED') await onRebookResolved(committed);
   return committed;
 }
@@ -278,7 +281,8 @@ function datesOverlap(start1: Date, end1: Date, start2: Date, end2: Date): boole
 async function resolveLine(
   input: CreateBookingInput,
   markupPct: number,
-  axis: ReturnType<typeof getAxisRooms>,
+  defaultResaleMarkupPct: number,
+  axis: ReturnType<typeof getInventoryClient>,
   actor: AgentActor,
   resolvedSoFar: { base: LineBase; agencyPrice: number }[] = [],
 ) {
@@ -312,7 +316,7 @@ async function resolveLine(
   const resort = (await axis.listResorts()).find((r) => r.id === input.resortId);
   if (!resort) throw ApiError.notFound('Resort not found');
 
-  // v4 §1 — rates, occupancy and restrictions come from AxisRooms (source of truth);
+  // v4 §1 — rates, occupancy and restrictions come from CRS (source of truth);
   // the portal applies only the agency markup. Use the raw YYYY-MM-DD inputs (not the
   // parsed Dates) so the ARI date keys aren't shifted by timezone on toISOString().
   // input.checkOut is guaranteed for OVERNIGHT (validateStayDates throws otherwise).
@@ -341,6 +345,12 @@ async function resolveLine(
   const occupancy = { adults, children, extraBeds, childAges };
   const charge = stayType === 'DAY_USE' ? priceDayUseFromAxis(rates, occupancy, markupPct) : priceRoomFromAxis(rates, plan, occupancy, markupPct);
 
+  // B2B resale layer — the agent's sell price to their customer. The override
+  // (validated 0–500 at the route) wins over the agency default; the snapshot
+  // makes profit reporting reproducible even if the default changes later.
+  const resaleMarkupPct = round2(input.resaleMarkupPct ?? defaultResaleMarkupPct);
+  const sellPrice = applyResaleMarkup(charge.agencyPrice, resaleMarkupPct);
+
   const base = {
     agencyId: actor.agencyId,
     agentId: actor.userId,
@@ -361,6 +371,8 @@ async function resolveLine(
     baseRate: charge.roomChargeTotal,
     agencyPrice: charge.agencyPrice,
     markupPct,
+    resaleMarkupPct,
+    sellPrice,
     // v3 §8 — persist guest data; DPDP data-minimisation keeps only the ID last-4.
     leadGuestName: input.guest?.name || null,
     leadGuestPhone: input.guest?.phone || null,
@@ -375,7 +387,7 @@ async function resolveLine(
 
 type LineBase = Awaited<ReturnType<typeof resolveLine>>['base'];
 
-/** Confirm-on-credit line: create → commit to AxisRooms → record the credit obligation. */
+/** Confirm-on-credit line: create → commit to CRS → record the credit obligation. */
 async function createCreditLine(base: LineBase, actor: AgentActor, paymentTerms: string, projectedBalance: number, groupId?: string): Promise<Booking> {
   const booking = await prisma.booking.create({ data: { ...base, groupId, paymentMode: 'CREDIT', state: 'CONFIRMED_ON_CREDIT' } });
   await recordAuditLogSafe({
@@ -386,7 +398,7 @@ async function createCreditLine(base: LineBase, actor: AgentActor, paymentTerms:
     actorRole: 'AGENT',
     after: { agencyPrice: base.agencyPrice, projectedBalance, groupId },
   });
-  const committed = await commitToAxisRooms(booking);
+  const committed = await commitToCrs(booking);
   // v3 §5.2 — only bill the agency once the reservation actually lands. If the
   // push failed (COMMIT_FAILED), the obligation is recorded when the rebook
   // succeeds (onRebookResolved), so a queued booking never owes prematurely.
@@ -394,7 +406,7 @@ async function createCreditLine(base: LineBase, actor: AgentActor, paymentTerms:
   return committed;
 }
 
-/** Pay-first line: tentative portal hold (NOT AxisRooms) with a TTL. */
+/** Pay-first line: tentative portal hold (NOT CRS) with a TTL. */
 async function createPrepayLine(base: LineBase, actor: AgentActor, holdExpiresAt: Date, groupId?: string): Promise<Booking> {
   const booking = await prisma.booking.create({ data: { ...base, groupId, paymentMode: 'PREPAY', state: 'AWAITING_PAYMENT', holdExpiresAt } });
   await recordAuditLogSafe({
@@ -409,13 +421,13 @@ async function createPrepayLine(base: LineBase, actor: AgentActor, holdExpiresAt
 }
 
 export async function createBooking(input: CreateBookingInput, actor: AgentActor): Promise<Booking> {
-  await assertAgencyCanTransact(actor.agencyId);
+  const agency = await assertAgencyCanTransact(actor.agencyId);
   const config = await getCurrentConfigOrThrow(actor.agencyId);
-  const axis = getAxisRooms();
+  const axis = getInventoryClient();
   // Block, don't queue: health-check before we let a booking proceed (§10).
-  if (!(await axis.healthCheck())) throw ApiError.serviceUnavailable('AxisRooms is unavailable — booking is temporarily disabled');
+  if (!(await axis.healthCheck())) throw ApiError.serviceUnavailable('CRS is unavailable — booking is temporarily disabled');
 
-  const { base, agencyPrice } = await resolveLine(input, Number(config.markupPct), axis, actor);
+  const { base, agencyPrice } = await resolveLine(input, Number(config.markupPct), Number(agency.defaultResaleMarkupPct), axis, actor);
   const outstanding = await getOutstanding(actor.agencyId);
   const gate = evaluateCreditGate({
     paymentMode: config.paymentMode,
@@ -428,7 +440,7 @@ export async function createBooking(input: CreateBookingInput, actor: AgentActor
     gate.branch === 'confirm_on_credit'
       ? await createCreditLine(base, actor, config.paymentTerms, gate.projectedBalance)
       : await createPrepayLine(base, actor, new Date(Date.now() + env.BOOKING_HOLD_TTL_MINUTES * 60 * 1000));
-  broadcast(['bookings', 'finance'], { agencyId: actor.agencyId });
+  await broadcast(['bookings', 'finance'], { agencyId: actor.agencyId });
   // COMMIT_FAILED lines already got a "pending confirmation" notice; only the
   // ones that actually committed get the confirmation here.
   if (gate.branch === 'confirm_on_credit' && booking.state === 'COMMITTED') {
@@ -449,14 +461,15 @@ export async function createBooking(input: CreateBookingInput, actor: AgentActor
  */
 export async function createGroupBooking(lines: CreateBookingInput[], actor: AgentActor): Promise<Booking[]> {
   if (lines.length === 0) throw ApiError.badRequest('A booking must contain at least one room');
-  await assertAgencyCanTransact(actor.agencyId);
+  const agency = await assertAgencyCanTransact(actor.agencyId);
   const config = await getCurrentConfigOrThrow(actor.agencyId);
-  const axis = getAxisRooms();
-  if (!(await axis.healthCheck())) throw ApiError.serviceUnavailable('AxisRooms is unavailable — booking is temporarily disabled');
+  const axis = getInventoryClient();
+  if (!(await axis.healthCheck())) throw ApiError.serviceUnavailable('CRS is unavailable — booking is temporarily disabled');
 
   const markupPct = Number(config.markupPct);
+  const defaultResalePct = Number(agency.defaultResaleMarkupPct);
   const resolved: { base: LineBase; agencyPrice: number }[] = [];
-  for (const line of lines) resolved.push(await resolveLine(line, markupPct, axis, actor, resolved));
+  for (const line of lines) resolved.push(await resolveLine(line, markupPct, defaultResalePct, axis, actor, resolved));
   const aggregate = round2(resolved.reduce((s, r) => s + r.agencyPrice, 0));
 
   const outstanding = await getOutstanding(actor.agencyId);
@@ -475,7 +488,7 @@ export async function createGroupBooking(lines: CreateBookingInput[], actor: Age
     const holdExpiresAt = new Date(Date.now() + env.BOOKING_HOLD_TTL_MINUTES * 60 * 1000);
     for (const r of resolved) created.push(await createPrepayLine(r.base, actor, holdExpiresAt, groupId));
   }
-  broadcast(['bookings', 'finance'], { agencyId: actor.agencyId });
+  await broadcast(['bookings', 'finance'], { agencyId: actor.agencyId });
   const committedLines = created.filter((b) => b.state === 'COMMITTED');
   if (gate.branch === 'confirm_on_credit' && committedLines.length) {
     await notifyAgency(
@@ -495,7 +508,7 @@ export async function payGroup(groupId: string, actor: AgentActor): Promise<Book
   if (lines.length === 0) throw ApiError.notFound('No payable rooms in this group');
   const paid: Booking[] = [];
   for (const line of lines) paid.push(await payBookingInternal(line.id, actor));
-  broadcast(['bookings', 'finance'], { agencyId: actor.agencyId });
+  await broadcast(['bookings', 'finance'], { agencyId: actor.agencyId });
   const committedLines = paid.filter((b) => b.state === 'COMMITTED');
   if (committedLines.length) {
     await notifyAgency(
@@ -570,13 +583,13 @@ async function payBookingInternal(bookingId: string, actor: AgentActor): Promise
     actorId: actor.userId,
     actorRole: 'AGENT',
   });
-  // Converge with the credit branch: confirm + commit to AxisRooms.
-  return commitToAxisRooms({ ...paid, state: 'CONFIRMED' });
+  // Converge with the credit branch: confirm + commit to CRS.
+  return commitToCrs({ ...paid, state: 'CONFIRMED' });
 }
 
 export async function payBooking(bookingId: string, actor: AgentActor): Promise<Booking> {
   const committed = await payBookingInternal(bookingId, actor);
-  broadcast(['bookings', 'finance'], { agencyId: actor.agencyId });
+  await broadcast(['bookings', 'finance'], { agencyId: actor.agencyId });
   // v3 §5.2 — if the post-payment commit failed, the payment is captured but the
   // booking is COMMIT_FAILED and queued; the agent already got a "pending" notice.
   if (committed.state === 'COMMITTED') {
@@ -595,9 +608,9 @@ export async function cancelBooking(bookingId: string, actor: AgentActor): Promi
     throw ApiError.conflict(`Booking is already ${booking.state.toLowerCase()}`);
   }
 
-  // Reverse the AxisRooms reservation if one was committed.
-  if (booking.state === 'COMMITTED' && booking.axisRoomsRef) {
-    await getAxisRooms().cancelReservation(booking.axisRoomsRef);
+  // Reverse the CRS reservation if one was committed.
+  if (booking.state === 'COMMITTED' && booking.crsBookingRef) {
+    await getInventoryClient().cancelReservation(booking.crsBookingRef);
   }
 
   const cancelledAt = new Date();
@@ -624,7 +637,7 @@ export async function cancelBooking(bookingId: string, actor: AgentActor): Promi
     actorRole: 'AGENT',
     before: { state: booking.state },
   });
-  broadcast(['bookings', 'finance'], { agencyId: actor.agencyId });
+  await broadcast(['bookings', 'finance'], { agencyId: actor.agencyId });
   await notifyAgency(
     actor.agencyId,
     { event: 'BOOKING_CANCELLED', resortName: cancelled.resortName },
@@ -651,8 +664,8 @@ export async function adminCancelBooking(
   }
 
   const cancelledAt = new Date();
-  if (booking.state === 'COMMITTED' && booking.axisRoomsRef) {
-    await getAxisRooms().cancelReservation(booking.axisRoomsRef);
+  if (booking.state === 'COMMITTED' && booking.crsBookingRef) {
+    await getInventoryClient().cancelReservation(booking.crsBookingRef);
   }
   if (booking.state === 'COMMITTED') {
     // Resort-initiated → full refund (0%); no-show → policy bands (100% for past check-in).
@@ -673,7 +686,7 @@ export async function adminCancelBooking(
     before: { state: booking.state },
     after: { reason: opts.reason ?? null },
   });
-  broadcast(['bookings', 'finance'], { agencyId: booking.agencyId });
+  await broadcast(['bookings', 'finance'], { agencyId: booking.agencyId });
   await notifyAgency(
     booking.agencyId,
     opts.kind === 'NO_SHOW'

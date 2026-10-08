@@ -1,10 +1,10 @@
 import type { RatePlanCode } from '@prisma/client';
 import { ApiError } from '../../utils/apiError';
-import type { OccupancyConfig, RoomTypeRates } from '../../lib/axisrooms/axisrooms.types';
+import type { OccupancyConfig, RoomTypeRates } from '../../lib/inventory/inventory.types';
 
 /**
  * v4 §1 — server-side room-charge composition. Rate plans, per-date net rates,
- * occupancy and restrictions all come from AxisRooms (the source of truth); the
+ * occupancy and restrictions all come from CRS (the source of truth); the
  * portal's ONLY pricing responsibility is applying the agency's markup. The
  * customer price is never computed or stored, and a client-supplied price is never
  * trusted — every booking recomputes here.
@@ -66,6 +66,15 @@ export interface ComposedCharge {
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+/**
+ * B2B resale layer — the agent's customer-facing sell price: the agency's buy
+ * price plus the agent's own markup. Profit = sellPrice − agencyPrice.
+ */
+export function applyResaleMarkup(agencyPrice: number, resaleMarkupPct: number): number {
+  if (!Number.isFinite(resaleMarkupPct) || resaleMarkupPct < 0) return round2(agencyPrice);
+  return round2(agencyPrice * (1 + resaleMarkupPct / 100));
+}
+
 const toPricingConfig = (o: OccupancyConfig): RoomPricingConfig => ({
   baseOccupancy: o.baseOccupancy,
   maxAdults: o.maxAdults,
@@ -100,7 +109,7 @@ function computeExtras(cfg: RoomPricingConfig, occ: Occupancy) {
 }
 
 /**
- * Compose a charge from AxisRooms per-night net rates. Base varies by date; the
+ * Compose a charge from CRS per-night net rates. Base varies by date; the
  * occupancy extras are per-night flat. Markup is applied once on the stay total.
  */
 export function composeFromNightly(
@@ -135,14 +144,14 @@ const nightlyFor = (rates: RoomTypeRates, plan: RatePlanCode): number[] | null =
   return rp ? rp.dailyRates.map((d) => d.rate) : null;
 };
 
-/** Price one plan for a room from AxisRooms rates (booking commit). Throws if the plan/occupancy is invalid. */
+/** Price one plan for a room from CRS rates (booking commit). Throws if the plan/occupancy is invalid. */
 export function priceRoomFromAxis(rates: RoomTypeRates, plan: RatePlanCode, occupancy: Occupancy, markupPct: number): ComposedCharge {
   const nightly = nightlyFor(rates, plan);
   if (!nightly) throw ApiError.badRequest(`Rate plan ${plan} is not available for these dates`);
   return composeFromNightly(nightly, plan, toPricingConfig(rates.occupancy), occupancy, markupPct);
 }
 
-/** Price every available plan for a room from AxisRooms rates (search view). Invalid plans/occupancy are skipped. */
+/** Price every available plan for a room from CRS rates (search view). Invalid plans/occupancy are skipped. */
 export function pricePlansFromAxis(rates: RoomTypeRates, occupancy: Occupancy, markupPct: number): ComposedCharge[] {
   const out: ComposedCharge[] = [];
   for (const rp of rates.ratePlans) {
@@ -156,7 +165,7 @@ export function pricePlansFromAxis(rates: RoomTypeRates, occupancy: Occupancy, m
 }
 
 /**
- * v4 §1 — price a same-day DAY_USE booking from the AxisRooms day-use rate. A single
+ * v4 §1 — price a same-day DAY_USE booking from the CRS day-use rate. A single
  * use charge (not per-night); occupancy extras apply once. `nights` is 0. Day-use is
  * plan-agnostic (recorded as EP) — meal plans don't apply to a same-day slot.
  */
